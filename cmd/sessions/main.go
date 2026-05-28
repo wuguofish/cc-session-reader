@@ -149,6 +149,7 @@ func runRead(args []string, out io.Writer, errOut io.Writer, store parser.Store)
 	fs.SetOutput(errOut)
 	maxLines := fs.Int("max-lines", 0, "max output lines (0=unlimited)")
 	isVerboseAgents := fs.Bool("verbose-agents", false, "show full agent results")
+	isVerboseBash := fs.Bool("verbose-bash", false, "show full Bash tool stdout/stderr")
 	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
@@ -158,7 +159,7 @@ func runRead(args []string, out io.Writer, errOut io.Writer, store parser.Store)
 		return err
 	}
 
-	return formatter.FormatRead(resolved.Path, *maxLines, *isVerboseAgents, out)
+	return formatter.FormatRead(resolved.Path, *maxLines, *isVerboseAgents, *isVerboseBash, out)
 }
 
 func cmdContext(args []string) {
@@ -172,6 +173,7 @@ func runContext(args []string, out io.Writer, errOut io.Writer, store parser.Sto
 	fs := flag.NewFlagSet("context", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	isVerboseAgents := fs.Bool("verbose-agents", false, "show full agent results")
+	isVerboseBash := fs.Bool("verbose-bash", false, "show full Bash tool stdout/stderr")
 	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
@@ -181,7 +183,7 @@ func runContext(args []string, out io.Writer, errOut io.Writer, store parser.Sto
 		return err
 	}
 
-	return formatter.FormatContextWithStore(resolved.Path, resolved.ID, *isVerboseAgents, out, store)
+	return formatter.FormatContextWithStore(resolved.Path, resolved.ID, *isVerboseAgents, *isVerboseBash, out, store)
 }
 
 func cmdStats(args []string) {
@@ -322,6 +324,8 @@ func runAudit(args []string, out io.Writer, errOut io.Writer, store parser.Store
 var reorderBoolFlags = map[string]bool{
 	"-verbose-agents":  true,
 	"--verbose-agents": true,
+	"-verbose-bash":    true,
+	"--verbose-bash":   true,
 	"-no-tokens":       true,
 	"--no-tokens":      true,
 }

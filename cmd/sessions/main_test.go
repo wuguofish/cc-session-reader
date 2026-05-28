@@ -60,6 +60,8 @@ func TestReorderArgs_DoesNotConsumeBooleanFlagPositionals(t *testing.T) {
 	}{
 		{name: "read verbose agents long", flag: "--verbose-agents"},
 		{name: "read verbose agents short", flag: "-verbose-agents"},
+		{name: "read verbose bash long", flag: "--verbose-bash"},
+		{name: "read verbose bash short", flag: "-verbose-bash"},
 		{name: "stats no tokens long", flag: "--no-tokens"},
 		{name: "stats no tokens short", flag: "-no-tokens"},
 	}
@@ -76,7 +78,7 @@ func TestReorderArgs_DoesNotConsumeBooleanFlagPositionals(t *testing.T) {
 }
 
 func TestReorderBoolFlags_CoversSupportedBooleanFlags(t *testing.T) {
-	want := []string{"--no-tokens", "--verbose-agents", "-no-tokens", "-verbose-agents"}
+	want := []string{"--no-tokens", "--verbose-agents", "--verbose-bash", "-no-tokens", "-verbose-agents", "-verbose-bash"}
 	for _, flag := range want {
 		if !reorderBoolFlags[flag] {
 			t.Fatalf("reorderBoolFlags missing %s", flag)

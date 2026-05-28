@@ -4,16 +4,18 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/parser"
+	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/session"
 )
 
 func TestFormatRead_WhenTranscriptHasDialogueAndToolUse_ThenWritesReadableTimeline(t *testing.T) {
 	transcriptPath, _ := writeFormatterFixture(t)
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 0, false, &out); err != nil {
+	if err := FormatRead(transcriptPath, 0, false, false, &out); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -38,7 +40,7 @@ func TestFormatContext_WhenSessionMetadataExists_ThenWritesCompactContextWithHea
 
 	var out bytes.Buffer
 	store := parser.Store{SessionMetaDir: metaDir}
-	if err := FormatContextWithStore(transcriptPath, formatterFixtureSessionID, false, &out, store); err != nil {
+	if err := FormatContextWithStore(transcriptPath, formatterFixtureSessionID, false, false, &out, store); err != nil {
 		t.Fatalf("FormatContext returned error: %v", err)
 	}
 
@@ -62,7 +64,7 @@ func TestFormatRead_WhenMaxLinesReached_ThenStopsWithTruncationMessage(t *testin
 	transcriptPath, _ := writeFormatterFixture(t)
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 3, false, &out); err != nil {
+	if err := FormatRead(transcriptPath, 3, false, false, &out); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -81,7 +83,7 @@ func TestFormatRead_WhenVerboseAgents_ThenWritesFullAgentResult(t *testing.T) {
 	transcriptPath, _ := writeAgentFormatterFixture(t)
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 0, true, &out); err != nil {
+	if err := FormatRead(transcriptPath, 0, true, false, &out); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -109,7 +111,7 @@ func TestFormatRead_WhenToolResultHasNoPendingTool_ThenStillWritesSummary(t *tes
 	}
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 0, false, &out); err != nil {
+	if err := FormatRead(transcriptPath, 0, false, false, &out); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -159,4 +161,89 @@ func writeAgentFormatterFixture(t *testing.T) (string, string) {
 		t.Fatalf("write transcript: %v", err)
 	}
 	return transcriptPath, root
+}
+
+func TestFormatReadEvents_WhenVerboseBash_ThenShowsFullBashOutput(t *testing.T) {
+	events := []session.Event{
+		{
+			Kind:      session.EventAssistantMessage,
+			Timestamp: "2025-05-28T00:00:00Z",
+			Assistant: &session.AssistantMessage{
+				ToolUses: []session.ToolUse{
+					{ID: "tool-1", Name: "Bash", Input: session.ToolInput{Raw: map[string]any{"description": "Run tests"}}},
+				},
+			},
+		},
+		{
+			Kind: session.EventToolResult,
+			Tool: &session.ToolResult{ToolUseID: "tool-1", Success: false, Text: "FAIL line1\ndetail line2\ndetail line3"},
+		},
+	}
+	var out bytes.Buffer
+	FormatReadEvents(events, nil, 0, true, &out)
+	got := out.String()
+
+	if !strings.Contains(got, "detail line3") {
+		t.Fatalf("verbose bash should show full output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "FAIL line1") {
+		t.Fatalf("verbose bash should show first line of output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "-> FAILED:") {
+		t.Fatalf("verbose bash should show failure status, got:\n%s", got)
+	}
+}
+
+func TestFormatReadEvents_WhenVerboseBash_ThenNonBashToolsStillCompressed(t *testing.T) {
+	events := []session.Event{
+		{
+			Kind:      session.EventAssistantMessage,
+			Timestamp: "2025-05-28T00:00:00Z",
+			Assistant: &session.AssistantMessage{
+				ToolUses: []session.ToolUse{
+					{ID: "tool-1", Name: "Read", Input: session.ToolInput{Raw: map[string]any{"file_path": "/tmp/foo.go"}}},
+				},
+			},
+		},
+		{
+			Kind: session.EventToolResult,
+			Tool: &session.ToolResult{ToolUseID: "tool-1", Success: true, Text: "line1\nline2\nline3\nline4"},
+		},
+	}
+	var out bytes.Buffer
+	FormatReadEvents(events, nil, 0, true, &out)
+	got := out.String()
+
+	// Non-Bash tools should be compressed to one-line summary even with verbose-bash on
+	if strings.Contains(got, "line4") {
+		t.Fatalf("non-Bash tool should remain compressed with verbose-bash, got:\n%s", got)
+	}
+	if !strings.Contains(got, "line1") {
+		t.Fatalf("non-Bash tool summary should contain first line, got:\n%s", got)
+	}
+}
+
+func TestFormatContextEvents_WhenVerboseBash_ThenShowsFullBashOutput(t *testing.T) {
+	events := []session.Event{
+		{
+			Kind: session.EventAssistantMessage,
+			Assistant: &session.AssistantMessage{
+				Text: "running",
+				ToolUses: []session.ToolUse{
+					{ID: "tool-1", Name: "Bash", Input: session.ToolInput{Raw: map[string]any{"description": "Check status"}}},
+				},
+			},
+		},
+		{
+			Kind: session.EventToolResult,
+			Tool: &session.ToolResult{ToolUseID: "tool-1", Success: true, Text: "ok line1\nok line2"},
+		},
+	}
+	var out bytes.Buffer
+	FormatContextEvents(events, nil, true, &out)
+	got := out.String()
+
+	if !strings.Contains(got, "ok line2") {
+		t.Fatalf("verbose bash in context should show full output, got:\n%s", got)
+	}
 }

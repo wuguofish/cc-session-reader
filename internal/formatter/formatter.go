@@ -14,21 +14,26 @@ import (
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/summarizer"
 )
 
-func FormatRead(transcriptPath string, maxLines int, isVerboseAgents bool, out io.Writer) error {
+type pendingTool struct {
+	summary string
+	name    string // e.g. "Bash", "Read", "Edit"
+}
+
+func FormatRead(transcriptPath string, maxLines int, isVerboseAgents bool, isVerboseBash bool, out io.Writer) error {
 	events, agentIDs, err := loadEvents(transcriptPath, isVerboseAgents)
 	if err != nil {
 		return err
 	}
-	return FormatReadEvents(events, agentIDs, maxLines, out)
+	return FormatReadEvents(events, agentIDs, maxLines, isVerboseBash, out)
 }
 
-func FormatReadEvents(events []session.Event, agentIDs map[string]bool, maxLines int, out io.Writer) error {
+func FormatReadEvents(events []session.Event, agentIDs map[string]bool, maxLines int, isVerboseBash bool, out io.Writer) error {
 	linesOutput := 0
-	var pendingTools []string
+	var pendingTools []pendingTool
 
 	flush := func() {
-		for _, s := range pendingTools {
-			fmt.Fprintf(out, "  %s\n", s)
+		for _, pt := range pendingTools {
+			fmt.Fprintf(out, "  %s\n", pt.summary)
 			linesOutput++
 		}
 		if len(pendingTools) > 0 {
@@ -73,7 +78,7 @@ func FormatReadEvents(events []session.Event, agentIDs map[string]bool, maxLines
 			}
 
 		case session.EventToolResult:
-			handleToolResultRead(event, agentIDs, &pendingTools, flush, out, &linesOutput)
+			handleToolResultRead(event, agentIDs, &pendingTools, isVerboseBash, flush, out, &linesOutput)
 		}
 	}
 
@@ -81,22 +86,22 @@ func FormatReadEvents(events []session.Event, agentIDs map[string]bool, maxLines
 	return nil
 }
 
-func FormatContextWithStore(transcriptPath string, sessionID string, isVerboseAgents bool, out io.Writer, store parser.Store) error {
+func FormatContextWithStore(transcriptPath string, sessionID string, isVerboseAgents bool, isVerboseBash bool, out io.Writer, store parser.Store) error {
 	events, agentIDs, err := loadEvents(transcriptPath, isVerboseAgents)
 	if err != nil {
 		return err
 	}
 
 	writeContextHeader(sessionID, out, store)
-	return FormatContextEvents(events, agentIDs, out)
+	return FormatContextEvents(events, agentIDs, isVerboseBash, out)
 }
 
-func FormatContextEvents(events []session.Event, agentIDs map[string]bool, out io.Writer) error {
-	var pendingTools []string
+func FormatContextEvents(events []session.Event, agentIDs map[string]bool, isVerboseBash bool, out io.Writer) error {
+	var pendingTools []pendingTool
 
 	flush := func() {
-		for _, s := range pendingTools {
-			fmt.Fprintf(out, "  %s\n", s)
+		for _, pt := range pendingTools {
+			fmt.Fprintf(out, "  %s\n", pt.summary)
 		}
 		if len(pendingTools) > 0 {
 			fmt.Fprintln(out)
@@ -139,7 +144,7 @@ func FormatContextEvents(events []session.Event, agentIDs map[string]bool, out i
 				fmt.Fprintf(out, "Agent result:\n%s\n\n", event.Tool.Text)
 				continue
 			}
-			appendToolResult(event.Tool, &pendingTools)
+			appendToolResult(event.Tool, &pendingTools, isVerboseBash)
 		}
 	}
 
@@ -150,7 +155,8 @@ func FormatContextEvents(events []session.Event, agentIDs map[string]bool, out i
 func handleToolResultRead(
 	event session.Event,
 	agentIDs map[string]bool,
-	pendingTools *[]string,
+	pendingTools *[]pendingTool,
+	isVerboseBash bool,
 	flushFn func(),
 	out io.Writer,
 	linesOutput *int,
@@ -170,7 +176,7 @@ func handleToolResultRead(
 		*linesOutput += strings.Count(event.Tool.Text, "\n") + 3
 		return
 	}
-	appendToolResult(event.Tool, pendingTools)
+	appendToolResult(event.Tool, pendingTools, isVerboseBash)
 }
 
 func loadEvents(transcriptPath string, isVerboseAgents bool) ([]session.Event, map[string]bool, error) {
@@ -203,22 +209,50 @@ func writeContextHeader(sessionID string, out io.Writer, store parser.Store) {
 	fmt.Fprintf(out, "# Session %s | %s | %sm\n\n", shortID, project, duration)
 }
 
-func appendToolResult(result *session.ToolResult, pendingTools *[]string) {
+func appendToolResult(result *session.ToolResult, pendingTools *[]pendingTool, isVerboseBash bool) {
 	if len(*pendingTools) > 0 {
-		(*pendingTools)[len(*pendingTools)-1] += result.Summary()
+		last := &(*pendingTools)[len(*pendingTools)-1]
+		if isVerboseBash && last.name == "Bash" {
+			last.summary += formatVerboseBashResult(result)
+			return
+		}
+		last.summary += result.Summary()
 		return
 	}
 	name := result.RawName
 	if name == "" {
 		name = "ToolResult"
 	}
-	*pendingTools = append(*pendingTools, fmt.Sprintf("[%s]%s", name, result.Summary()))
+	*pendingTools = append(*pendingTools, pendingTool{
+		summary: fmt.Sprintf("[%s]%s", name, result.Summary()),
+		name:    name,
+	})
 }
 
-func summarizeToolUse(tool session.ToolUse) string {
+func formatVerboseBashResult(result *session.ToolResult) string {
+	text := strings.TrimSpace(result.Text)
+	if text == "" {
+		return fmt.Sprintf(" -> %s", result.Status())
+	}
+	indented := indentBlock(text, "    ")
+	return fmt.Sprintf(" -> %s:\n%s", result.Status(), indented)
+}
+
+func indentBlock(text string, prefix string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func summarizeToolUse(tool session.ToolUse) pendingTool {
 	name := tool.Name
 	if name == "" {
 		name = "?"
 	}
-	return summarizer.SummarizeToolUse(name, tool.Input)
+	return pendingTool{
+		summary: summarizer.SummarizeToolUse(name, tool.Input),
+		name:    name,
+	}
 }
