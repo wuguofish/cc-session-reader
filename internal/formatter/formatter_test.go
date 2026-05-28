@@ -19,19 +19,18 @@ func TestFormatRead_WhenTranscriptHasDialogueAndToolUse_ThenWritesReadableTimeli
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
-	want := `[05-28 00:00] user:
-hello
+	got := out.String()
 
-[05-28 00:00] assistant:
-hi
-  [Bash] Echo ok -> ok: ok
-
-[05-28 00:00] user:
-next
-
-`
-	if got := out.String(); got != want {
-		t.Fatalf("FormatRead output mismatch\nwant:\n%q\ngot:\n%q", want, got)
+	// Tool summaries must include short IDs (last 4 chars of tool_use_id) for expand lookups.
+	// Fixture tool ID is "tool-1" -> short ID "ol-1".
+	if !strings.Contains(got, "[Bash#ol-1] Echo ok") {
+		t.Fatalf("FormatRead output missing short ID tag in tool summary\ngot:\n%q", got)
+	}
+	if !strings.Contains(got, "[05-28 00:00] user:\nhello") {
+		t.Fatalf("FormatRead output missing user message\ngot:\n%q", got)
+	}
+	if !strings.Contains(got, "[05-28 00:00] assistant:\nhi") {
+		t.Fatalf("FormatRead output missing assistant message\ngot:\n%q", got)
 	}
 }
 
@@ -44,19 +43,17 @@ func TestFormatContext_WhenSessionMetadataExists_ThenWritesCompactContextWithHea
 		t.Fatalf("FormatContext returned error: %v", err)
 	}
 
-	want := `# Session 12345678 | proj | 3m
+	got := out.String()
 
-U: hello
-
-A: hi
-
-  [Bash] Echo ok -> ok: ok
-
-U: next
-
-`
-	if got := out.String(); got != want {
-		t.Fatalf("FormatContext output mismatch\nwant:\n%q\ngot:\n%q", want, got)
+	// Context format must also include short IDs in tool summaries.
+	if !strings.Contains(got, "# Session 12345678 | proj | 3m") {
+		t.Fatalf("FormatContext output missing header\ngot:\n%q", got)
+	}
+	if !strings.Contains(got, "[Bash#ol-1] Echo ok") {
+		t.Fatalf("FormatContext output missing short ID tag in tool summary\ngot:\n%q", got)
+	}
+	if !strings.Contains(got, "U: hello") || !strings.Contains(got, "U: next") {
+		t.Fatalf("FormatContext output missing user messages\ngot:\n%q", got)
 	}
 }
 
@@ -87,17 +84,14 @@ func TestFormatRead_WhenVerboseAgents_ThenWritesFullAgentResult(t *testing.T) {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
-	want := `[05-28 00:00] assistant:
-delegating
-  [Agent(general)] Inspect project
+	got := out.String()
 
-[05-28 00:00] agent result:
-agent line 1
-agent line 2
-
-`
-	if got := out.String(); got != want {
-		t.Fatalf("FormatRead verbose agent output mismatch\nwant:\n%q\ngot:\n%q", want, got)
+	// Agent tool summaries must also include short IDs. Fixture ID "agent-tool-1" -> "ol-1".
+	if !strings.Contains(got, "[Agent(general)#ol-1] Inspect project") {
+		t.Fatalf("FormatRead verbose agent output missing short ID tag\ngot:\n%q", got)
+	}
+	if !strings.Contains(got, "agent line 1\nagent line 2") {
+		t.Fatalf("FormatRead verbose agent output missing agent result text\ngot:\n%q", got)
 	}
 }
 

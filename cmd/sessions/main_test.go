@@ -280,6 +280,75 @@ func TestRunAudit_WhenSamplesIsNegative_ThenShowsZeroSamplesWithoutPanic(t *test
 	}
 }
 
+func TestRunExpand_GivenExistingToolID_WhenExpanded_ThenShowsFullInputAndResult(t *testing.T) {
+	root, sid := writeCLIFixture(t)
+	// writeCLIFixture has no tool_use events, so create a fixture with one.
+	root = t.TempDir()
+	sid = "12345678-1234-1234-1234-123456789abc"
+	projectDir := filepath.Join(root, ".claude", "projects", "proj")
+	metaDir := filepath.Join(root, ".claude", "usage-data", "session-meta")
+	_ = os.MkdirAll(projectDir, 0o755)
+	_ = os.MkdirAll(metaDir, 0o755)
+	transcript := strings.Join([]string{
+		`{"type":"assistant","timestamp":"2026-05-28T00:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"},{"type":"tool_use","name":"Bash","id":"toolu_01XYZabcdefgABCDuCVa","input":{"command":"echo hello","description":"Say hello"}}]}}`,
+		`{"type":"user","timestamp":"2026-05-28T00:00:02Z","toolUseResult":{"success":true,"commandName":"Bash"},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01XYZabcdefgABCDuCVa","content":"hello"}]}}`,
+		"",
+	}, "\n")
+	_ = os.WriteFile(filepath.Join(projectDir, sid+".jsonl"), []byte(transcript), 0o644)
+	writeListMeta(t, metaDir, sid, "/tmp/proj", "hello")
+
+	var stdout, stderr bytes.Buffer
+	store := parser.Store{
+		ProjectsDir:    filepath.Join(root, ".claude", "projects"),
+		SessionMetaDir: metaDir,
+	}
+	// Short ID of "toolu_01XYZabcdefgABCDuCVa" -> last 4 chars = "uCVa"
+	err := runExpand([]string{sid, "uCVa"}, &stdout, &stderr, store)
+	if err != nil {
+		t.Fatalf("runExpand returned error: %v", err)
+	}
+	got := stdout.String()
+	if !strings.Contains(got, "=== [Bash#uCVa] ===") {
+		t.Fatalf("expand output missing header\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "echo hello") {
+		t.Fatalf("expand output missing tool input\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "Result (ok):") {
+		t.Fatalf("expand output missing result status\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, "hello") {
+		t.Fatalf("expand output missing result text\ngot:\n%s", got)
+	}
+}
+
+func TestRunExpand_GivenNonexistentToolID_WhenExpanded_ThenReturnsError(t *testing.T) {
+	root, sid := writeCLIFixture(t)
+	var stdout, stderr bytes.Buffer
+	store := parser.Store{
+		ProjectsDir:    filepath.Join(root, ".claude", "projects"),
+		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
+	}
+	err := runExpand([]string{sid, "ZZZZ"}, &stdout, &stderr, store)
+	if err == nil {
+		t.Fatal("runExpand should return error when no tool IDs match")
+	}
+	if !strings.Contains(err.Error(), "no matching tool IDs found") {
+		t.Fatalf("error = %v, want 'no matching tool IDs found'", err)
+	}
+}
+
+func TestRunExpand_GivenNoArgs_WhenCalled_ThenReturnsUsageError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := runExpand(nil, &stdout, &stderr, parser.Store{})
+	if err == nil {
+		t.Fatal("runExpand should return error with no args")
+	}
+	if !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("error = %v, want usage message", err)
+	}
+}
+
 func writeCLIFixture(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()

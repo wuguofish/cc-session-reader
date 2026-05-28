@@ -2,6 +2,24 @@ package session
 
 import "testing"
 
+func TestToolShortID(t *testing.T) {
+	cases := []struct {
+		id   string
+		want string
+	}{
+		{"toolu_01MgFTqrK7rZxtcLxfnuuCVa", "uCVa"},
+		{"abc", "abc"},
+		{"", ""},
+		{"abcd", "abcd"},
+		{"abcde", "bcde"},
+	}
+	for _, tc := range cases {
+		if got := ToolShortID(tc.id); got != tc.want {
+			t.Errorf("ToolShortID(%q) = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}
+
 func TestToolInputMarshalNoEscape(t *testing.T) {
 	input := ToolInput{Raw: map[string]any{
 		"html": "<tag>",

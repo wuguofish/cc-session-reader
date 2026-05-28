@@ -25,6 +25,7 @@ type FormatOptions struct {
 type pendingTool struct {
 	summary string
 	name    string // e.g. "Bash", "Read", "Edit"
+	toolID  string // last 4 chars of tool_use_id
 }
 
 func FormatRead(transcriptPath string, maxLines int, opts FormatOptions, out io.Writer) error {
@@ -265,8 +266,29 @@ func summarizeToolUse(tool session.ToolUse) pendingTool {
 	if name == "" {
 		name = "?"
 	}
+	shortID := session.ToolShortID(tool.ID)
+	summary := summarizer.SummarizeToolUse(name, tool.Input)
+	// Inject "#shortID" before the closing ']' of the first bracket group
+	// so "[Bash] cmd" becomes "[Bash#ol-1] cmd" and
+	// "[Agent(general)] desc" becomes "[Agent(general)#ol-1] desc".
+	tagged := injectShortID(summary, shortID)
 	return pendingTool{
-		summary: summarizer.SummarizeToolUse(name, tool.Input),
+		summary: tagged,
 		name:    name,
+		toolID:  shortID,
 	}
+}
+
+// injectShortID inserts "#id" before the first ']' in summary.
+// "[Bash] Run tests" -> "[Bash#uCVa] Run tests"
+// "[Agent(general)] Inspect" -> "[Agent(general)#uCVa] Inspect"
+func injectShortID(summary string, shortID string) string {
+	if shortID == "" {
+		return summary
+	}
+	idx := strings.Index(summary, "]")
+	if idx < 0 {
+		return summary
+	}
+	return summary[:idx] + "#" + shortID + summary[idx:]
 }

@@ -77,6 +77,14 @@ func MarshalNoEscape(v any) string {
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
+// ToolShortID returns the last 4 characters of a tool_use_id as a short identifier.
+func ToolShortID(id string) string {
+	if len(id) <= 4 {
+		return id
+	}
+	return id[len(id)-4:]
+}
+
 // ShortID truncates id to maxLen characters.
 func ShortID(id string, maxLen int) string {
 	if len(id) > maxLen {

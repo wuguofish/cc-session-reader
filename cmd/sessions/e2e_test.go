@@ -36,22 +36,22 @@ func TestCLI_WhenSessionExists_ThenListReadContextAndAuditWorkEndToEnd(t *testin
 			},
 		},
 		{
-			name: "read shows dialogue and tool summary",
+			name: "read shows dialogue and tool summary with short ID",
 			args: []string{"read", sid},
 			want: []string{
 				"[05-28 00:00] user:\nhello",
 				"[05-28 00:00] assistant:\nhi",
-				"[Bash] Echo ok -> ok: ok",
+				"[Bash#ol-1] Echo ok -> ok: ok",
 			},
 		},
 		{
-			name: "context shows compact session format",
+			name: "context shows compact session format with short ID",
 			args: []string{"context", sid},
 			want: []string{
 				"# Session 12345678 | proj | 1m",
 				"U: hello",
 				"A: hi",
-				"[Bash] Echo ok -> ok: ok",
+				"[Bash#ol-1] Echo ok -> ok: ok",
 			},
 		},
 		{
@@ -71,6 +71,17 @@ func TestCLI_WhenSessionExists_ThenListReadContextAndAuditWorkEndToEnd(t *testin
 				"=== Breakdown ===",
 				"KEPT  user text:",
 				"CUT   tool result (raw):",
+			},
+		},
+		{
+			name: "expand shows full tool input and result for short ID",
+			args: []string{"expand", sid, "ol-1"},
+			want: []string{
+				"=== [Bash#ol-1] ===",
+				"Input:",
+				"echo ok",
+				"Result (ok):",
+				"ok",
 			},
 		},
 	}

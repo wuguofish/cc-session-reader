@@ -78,6 +78,15 @@ sessions audit <session-id> -n 10
 
 從每個過濾類別（tool result content、system noise、thinking）取樣，確認沒漏掉重要內容。
 
+### expand — 展開特定 tool call 的完整內容
+
+```bash
+sessions expand <session-id> <tool-id> [tool-id...]
+```
+
+`read` 和 `context` 輸出中每個 tool call 都附帶短 ID（如 `[Bash#uCVa]`），`#` 後的 4 碼即為 tool-id。
+用 `expand` 可以查看該 tool call 的完整 input JSON 和 result 原文，適合 debug 特定操作。
+
 ## 保留什麼 / 過濾什麼
 
 | 保留 | 過濾 |

@@ -27,6 +27,7 @@ allowed-tools:
 | 注入前次 session 為 context | `sessions context <id>` | 同 read 但格式更緊湊，帶 metadata header |
 | 分析 token 節省效果 | `sessions stats <id>` | 各類別字元分佈和壓縮比 |
 | 檢查過濾是否漏掉重要內容 | `sessions audit <id>` | 從被過濾的內容取樣檢視 |
+| 展開特定 tool call 完整內容 | `sessions expand <id> <tool-id> [...]` | read 輸出的 #xxxx 就是 tool-id |
 
 Session ID 支援 prefix match，前 8 碼通常就夠。各子命令的 flags 用 `sessions <cmd> --help` 查看。
 

@@ -1,5 +1,5 @@
 // Package main is the CLI entry point for the Claude session reader.
-// Subcommands: list, read, context, stats, audit.
+// Subcommands: list, read, context, stats, audit, expand.
 package main
 
 import (
@@ -37,6 +37,8 @@ func main() {
 		cmdStats(os.Args[2:])
 	case "audit":
 		cmdAudit(os.Args[2:])
+	case "expand":
+		cmdExpand(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", subcommand)
 		printUsage()
@@ -46,7 +48,7 @@ func main() {
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: sessions <command> [options]")
-	fmt.Fprintln(os.Stderr, "Commands: list, read, context, stats, audit")
+	fmt.Fprintln(os.Stderr, "Commands: list, read, context, stats, audit, expand")
 }
 
 func cmdList(args []string) {
@@ -317,6 +319,79 @@ func runAudit(args []string, out io.Writer, errOut io.Writer, store parser.Store
 		if len(items) > shown {
 			fmt.Fprintf(out, "  ... and %d more\n\n", len(items)-shown)
 		}
+	}
+	return nil
+}
+
+func cmdExpand(args []string) {
+	if err := runExpand(args, os.Stdout, os.Stderr, parser.DefaultStore()); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runExpand(args []string, out io.Writer, errOut io.Writer, store parser.Store) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: sessions expand <session-id> <tool-id> [tool-id...]")
+	}
+
+	sessionPrefix := args[0]
+	requestedIDs := args[1:] // short IDs to expand
+
+	resolved, err := store.ResolveSession(sessionPrefix)
+	if err != nil {
+		return err
+	}
+	if resolved.Path == "" {
+		return fmt.Errorf("transcript not found: %s", resolved.ID)
+	}
+
+	events, err := claudecodec.ReadAll(resolved.Path)
+	if err != nil {
+		return fmt.Errorf("parsing transcript: %w", err)
+	}
+
+	// Build maps: shortID -> ToolUse, full toolUseID -> ToolResult
+	toolUses := make(map[string]session.ToolUse)
+	toolResults := make(map[string]session.ToolResult)
+
+	for _, event := range events {
+		if event.Assistant != nil {
+			for _, tu := range event.Assistant.ToolUses {
+				shortID := session.ToolShortID(tu.ID)
+				toolUses[shortID] = tu
+			}
+		}
+		if event.Tool != nil {
+			toolResults[event.Tool.ToolUseID] = *event.Tool
+		}
+	}
+
+	// Expand each requested ID
+	found := 0
+	for _, reqID := range requestedIDs {
+		tu, ok := toolUses[reqID]
+		if !ok {
+			fmt.Fprintf(errOut, "warning: tool ID %s not found\n", reqID)
+			continue
+		}
+		found++
+
+		fmt.Fprintf(out, "=== [%s#%s] ===\n", tu.Name, reqID)
+		fmt.Fprintf(out, "Input:\n")
+		fmt.Fprintf(out, "  %s\n", tu.Input.MarshalNoEscape())
+
+		if result, ok := toolResults[tu.ID]; ok {
+			fmt.Fprintf(out, "Result (%s):\n", result.Status())
+			if result.Text != "" {
+				fmt.Fprintf(out, "%s\n", result.Text)
+			}
+		}
+		fmt.Fprintln(out)
+	}
+
+	if found == 0 {
+		return fmt.Errorf("no matching tool IDs found. Use 'sessions read <session-id>' to see available IDs")
 	}
 	return nil
 }
