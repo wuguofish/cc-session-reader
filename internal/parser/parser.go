@@ -3,7 +3,6 @@ package parser
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"claude-code-session-reader/internal/jsonutil"
 )
 
 // Directory constants derived from ~/.claude/
@@ -178,8 +179,8 @@ func ExtractText(content interface{}) string {
 			if !isMap {
 				continue
 			}
-			if getString(block, "type") == "text" {
-				parts = append(parts, getString(block, "text"))
+			if jsonutil.GetStr(block, "type") == "text" {
+				parts = append(parts, jsonutil.GetStr(block, "text"))
 			}
 		}
 		return strings.Join(parts, "\n")
@@ -199,7 +200,7 @@ func GetToolUses(content interface{}) []map[string]interface{} {
 		if !isMap {
 			continue
 		}
-		if getString(block, "type") == "tool_use" {
+		if jsonutil.GetStr(block, "type") == "tool_use" {
 			results = append(results, block)
 		}
 	}
@@ -223,10 +224,10 @@ func CollectAgentToolIDs(path string) (map[string]bool, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			continue
 		}
-		if getString(entry, "type") != "assistant" {
+		if jsonutil.GetStr(entry, "type") != "assistant" {
 			continue
 		}
-		message := getMap(entry, "message")
+		message := jsonutil.GetMap(entry, "message")
 		if message == nil {
 			continue
 		}
@@ -239,8 +240,8 @@ func CollectAgentToolIDs(path string) (map[string]bool, error) {
 			if !isMap {
 				continue
 			}
-			if getString(block, "type") == "tool_use" && getString(block, "name") == "Agent" {
-				ids[getString(block, "id")] = true
+			if jsonutil.GetStr(block, "type") == "tool_use" && jsonutil.GetStr(block, "name") == "Agent" {
+				ids[jsonutil.GetStr(block, "id")] = true
 			}
 		}
 	}
@@ -249,7 +250,7 @@ func CollectAgentToolIDs(path string) (map[string]bool, error) {
 
 // ExtractToolResultText extracts text content and tool_use_id from a tool_result entry.
 func ExtractToolResultText(entry map[string]interface{}) (string, string) {
-	message := getMap(entry, "message")
+	message := jsonutil.GetMap(entry, "message")
 	if message == nil {
 		return "", ""
 	}
@@ -259,10 +260,10 @@ func ExtractToolResultText(entry map[string]interface{}) (string, string) {
 	}
 	for _, item := range content {
 		block, isMap := item.(map[string]interface{})
-		if !isMap || getString(block, "type") != "tool_result" {
+		if !isMap || jsonutil.GetStr(block, "type") != "tool_result" {
 			continue
 		}
-		toolUseID := getString(block, "tool_use_id")
+		toolUseID := jsonutil.GetStr(block, "tool_use_id")
 		sub := block["content"]
 		if s, ok := sub.(string); ok {
 			return s, toolUseID
@@ -271,10 +272,10 @@ func ExtractToolResultText(entry map[string]interface{}) (string, string) {
 			var parts []string
 			for _, subItem := range subArr {
 				subBlock, isMap := subItem.(map[string]interface{})
-				if !isMap || getString(subBlock, "type") != "text" {
+				if !isMap || jsonutil.GetStr(subBlock, "type") != "text" {
 					continue
 				}
-				parts = append(parts, getString(subBlock, "text"))
+				parts = append(parts, jsonutil.GetStr(subBlock, "text"))
 			}
 			return strings.Join(parts, "\n"), toolUseID
 		}
@@ -285,7 +286,7 @@ func ExtractToolResultText(entry map[string]interface{}) (string, string) {
 // ExtractAllText extracts all text content from an entry, including tool inputs and results.
 func ExtractAllText(entry map[string]interface{}) string {
 	var parts []string
-	message := getMap(entry, "message")
+	message := jsonutil.GetMap(entry, "message")
 	if message == nil {
 		return ""
 	}
@@ -298,13 +299,13 @@ func ExtractAllText(entry map[string]interface{}) string {
 			if !isMap {
 				continue
 			}
-			switch getString(block, "type") {
+			switch jsonutil.GetStr(block, "type") {
 			case "text":
-				parts = append(parts, getString(block, "text"))
+				parts = append(parts, jsonutil.GetStr(block, "text"))
 			case "tool_use":
 				inp := block["input"]
 				if inp != nil {
-					parts = append(parts, marshalNoEscape(inp))
+					parts = append(parts, jsonutil.MarshalNoEscape(inp))
 				}
 			case "tool_result":
 				sub := block["content"]
@@ -313,17 +314,17 @@ func ExtractAllText(entry map[string]interface{}) string {
 				} else if subArr, ok := sub.([]interface{}); ok {
 					for _, subItem := range subArr {
 						subBlock, isSubMap := subItem.(map[string]interface{})
-						if !isSubMap || getString(subBlock, "type") != "text" {
+						if !isSubMap || jsonutil.GetStr(subBlock, "type") != "text" {
 							continue
 						}
-						parts = append(parts, getString(subBlock, "text"))
+						parts = append(parts, jsonutil.GetStr(subBlock, "text"))
 					}
 				}
 			}
 		}
 	}
 
-	tr := getMap(entry, "toolUseResult")
+	tr := jsonutil.GetMap(entry, "toolUseResult")
 	if tr != nil {
 		for _, key := range []string{"stdout", "stderr", "output"} {
 			if v, ok := tr[key]; ok && v != nil {
@@ -337,7 +338,7 @@ func ExtractAllText(entry map[string]interface{}) string {
 
 // IsNoise returns true if the entry is a noise type that should be skipped.
 func IsNoise(entry map[string]interface{}) bool {
-	entryType := getString(entry, "type")
+	entryType := jsonutil.GetStr(entry, "type")
 	return NoiseTypes[entryType] || entryType == "system"
 }
 
@@ -373,43 +374,4 @@ func ListSessionMetaFiles() ([]SessionMetaFile, error) {
 		return files[i].ModTime.After(files[j].ModTime)
 	})
 	return files, nil
-}
-
-// --- helpers ---
-
-// marshalNoEscape serializes to JSON without escaping Unicode characters,
-// matching Python's json.dumps(ensure_ascii=False) behavior.
-func marshalNoEscape(v interface{}) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return "{}"
-	}
-	// Encode appends a newline; strip it
-	return strings.TrimSuffix(buf.String(), "\n")
-}
-
-func getString(m map[string]interface{}, key string) string {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return ""
-	}
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	return s
-}
-
-func getMap(m map[string]interface{}, key string) map[string]interface{} {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return nil
-	}
-	sub, ok := v.(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	return sub
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"claude-code-session-reader/internal/jsonutil"
 	"claude-code-session-reader/internal/parser"
 	"claude-code-session-reader/internal/summarizer"
 )
@@ -72,9 +73,9 @@ func FormatRead(transcriptPath string, sessionID string, maxLines int, isVerbose
 			continue
 		}
 
-		role := getStr(message, "role")
+		role := jsonutil.GetStr(message, "role")
 		content := message["content"]
-		ts := parser.FormatTimestamp(getStr(entry, "timestamp"))
+		ts := parser.FormatTimestamp(jsonutil.GetStr(entry, "timestamp"))
 
 		switch role {
 		case "user":
@@ -104,11 +105,11 @@ func FormatRead(transcriptPath string, sessionID string, maxLines int, isVerbose
 			}
 
 			for _, tb := range toolBlocks {
-				name := getStr(tb, "name")
+				name := jsonutil.GetStr(tb, "name")
 				if name == "" {
 					name = "?"
 				}
-				inp := getInputMap(tb)
+				inp := jsonutil.GetInputMap(tb)
 				pendingTools = append(pendingTools, summarizer.SummarizeToolUse(name, inp))
 			}
 
@@ -137,7 +138,7 @@ func handleToolResultRead(
 ) {
 	if summarizer.IsUserAnswer(entry) {
 		flushFn()
-		ts := parser.FormatTimestamp(getStr(entry, "timestamp"))
+		ts := parser.FormatTimestamp(jsonutil.GetStr(entry, "timestamp"))
 		answer := summarizer.ExtractUserAnswers(entry)
 		fmt.Fprintf(out, "[%s] user (answer):\n%s\n\n", ts, answer)
 		*linesOutput += strings.Count(answer, "\n") + 3
@@ -148,7 +149,7 @@ func handleToolResultRead(
 		fullText, toolUseID := parser.ExtractToolResultText(entry)
 		if agentIDs[toolUseID] && strings.TrimSpace(fullText) != "" {
 			flushFn()
-			ts := parser.FormatTimestamp(getStr(entry, "timestamp"))
+			ts := parser.FormatTimestamp(jsonutil.GetStr(entry, "timestamp"))
 			fmt.Fprintf(out, "[%s] agent result:\n%s\n\n", ts, fullText)
 			*linesOutput += strings.Count(fullText, "\n") + 3
 			return
@@ -176,7 +177,7 @@ func FormatContext(transcriptPath string, sessionID string, isVerboseAgents bool
 	// Print session header from metadata
 	meta, err := parser.LoadSessionMeta(sessionID)
 	if err == nil && meta != nil {
-		projectPath := getStr(meta, "project_path")
+		projectPath := jsonutil.GetStr(meta, "project_path")
 		project := filepath.Base(projectPath)
 		if project == "" || project == "." {
 			project = "?"
@@ -250,7 +251,7 @@ func FormatContext(transcriptPath string, sessionID string, isVerboseAgents bool
 			continue
 		}
 
-		role := getStr(message, "role")
+		role := jsonutil.GetStr(message, "role")
 		content := message["content"]
 
 		switch role {
@@ -271,11 +272,11 @@ func FormatContext(transcriptPath string, sessionID string, isVerboseAgents bool
 			}
 
 			for _, tb := range toolBlocks {
-				name := getStr(tb, "name")
+				name := jsonutil.GetStr(tb, "name")
 				if name == "" {
 					name = "?"
 				}
-				inp := getInputMap(tb)
+				inp := jsonutil.GetInputMap(tb)
 				pendingTools = append(pendingTools, summarizer.SummarizeToolUse(name, inp))
 			}
 		}
@@ -297,24 +298,4 @@ func safeParse(data []byte) map[string]interface{} {
 		return nil
 	}
 	return entry
-}
-
-func getStr(m map[string]interface{}, key string) string {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return ""
-	}
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	return s
-}
-
-func getInputMap(tb map[string]interface{}) map[string]interface{} {
-	inp, ok := tb["input"].(map[string]interface{})
-	if !ok {
-		return make(map[string]interface{})
-	}
-	return inp
 }

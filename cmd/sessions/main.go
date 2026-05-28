@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"claude-code-session-reader/internal/formatter"
+	"claude-code-session-reader/internal/jsonutil"
 	"claude-code-session-reader/internal/parser"
 	"claude-code-session-reader/internal/summarizer"
 	"claude-code-session-reader/internal/tokens"
@@ -80,7 +80,7 @@ func cmdList(args []string) {
 			continue
 		}
 
-		projectPath := getStr(meta, "project_path")
+		projectPath := jsonutil.GetStr(meta, "project_path")
 		projectName := "?"
 		if projectPath != "" {
 			projectName = filepath.Base(projectPath)
@@ -90,15 +90,15 @@ func cmdList(args []string) {
 			continue
 		}
 
-		sid := getStr(meta, "session_id")
+		sid := jsonutil.GetStr(meta, "session_id")
 		if sid == "" {
 			sid = strings.TrimSuffix(filepath.Base(mf.Path), ".json")
 		}
-		startTime := getStr(meta, "start_time")
-		duration := getNum(meta, "duration_minutes")
-		userMsgs := getNum(meta, "user_message_count")
-		asstMsgs := getNum(meta, "assistant_message_count")
-		firstPrompt := getStr(meta, "first_prompt")
+		startTime := jsonutil.GetStr(meta, "start_time")
+		duration := jsonutil.GetNum(meta, "duration_minutes")
+		userMsgs := jsonutil.GetNum(meta, "user_message_count")
+		asstMsgs := jsonutil.GetNum(meta, "assistant_message_count")
+		firstPrompt := jsonutil.GetStr(meta, "first_prompt")
 		runes := []rune(firstPrompt)
 		if len(runes) > 80 {
 			firstPrompt = string(runes[:77]) + "..."
@@ -207,7 +207,7 @@ func cmdStats(args []string) {
 			continue
 		}
 
-		role := getStr(message, "role")
+		role := jsonutil.GetStr(message, "role")
 		switch role {
 		case "user":
 			text := parser.ExtractText(content)
@@ -224,15 +224,15 @@ func cmdStats(args []string) {
 				filteredParts = append(filteredParts, text)
 			}
 			for _, tb := range parser.GetToolUses(content) {
-				rawJSON := marshalNoEscape(getInputMap(tb))
+				rawJSON := jsonutil.MarshalNoEscape(jsonutil.GetInputMap(tb))
 				categories["tool_input_raw"] += utf8.RuneCountInString(rawJSON)
 				rawParts = append(rawParts, rawJSON)
 
-				name := getStr(tb, "name")
+				name := jsonutil.GetStr(tb, "name")
 				if name == "" {
 					name = "?"
 				}
-				summary := summarizer.SummarizeToolUse(name, getInputMap(tb))
+				summary := summarizer.SummarizeToolUse(name, jsonutil.GetInputMap(tb))
 				categories["tool_summaries"] += utf8.RuneCountInString(summary)
 				filteredParts = append(filteredParts, summary)
 			}
@@ -342,7 +342,7 @@ func cmdAudit(args []string) {
 		if parser.IsNoise(entry) {
 			text := parser.ExtractAllText(entry)
 			if strings.TrimSpace(text) != "" {
-				entryType := getStr(entry, "type")
+				entryType := jsonutil.GetStr(entry, "type")
 				snippet := text
 				if len(snippet) > 200 {
 					snippet = snippet[:200]
@@ -361,7 +361,7 @@ func cmdAudit(args []string) {
 					tr, ok := entry["toolUseResult"].(map[string]interface{})
 					name := "?"
 					if ok {
-						if n := getStr(tr, "commandName"); n != "" {
+						if n := jsonutil.GetStr(tr, "commandName"); n != "" {
 							name = n
 						}
 					}
@@ -377,14 +377,14 @@ func cmdAudit(args []string) {
 		}
 
 		// Thinking blocks in assistant messages
-		if getStr(message, "role") == "assistant" {
+		if jsonutil.GetStr(message, "role") == "assistant" {
 			if content, ok := message["content"].([]interface{}); ok {
 				for _, item := range content {
 					block, isMap := item.(map[string]interface{})
-					if !isMap || getStr(block, "type") != "thinking" {
+					if !isMap || jsonutil.GetStr(block, "type") != "thinking" {
 						continue
 					}
-					thinking := getStr(block, "thinking")
+					thinking := jsonutil.GetStr(block, "thinking")
 					if strings.TrimSpace(thinking) != "" {
 						snippet := thinking
 						if len(snippet) > 300 {
@@ -464,54 +464,6 @@ func findTranscriptOrExit(sessionID string) string {
 		os.Exit(1)
 	}
 	return path
-}
-
-func getStr(m map[string]interface{}, key string) string {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return ""
-	}
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	return s
-}
-
-func getNum(m map[string]interface{}, key string) int {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return 0
-	}
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	}
-	return 0
-}
-
-func getInputMap(tb map[string]interface{}) map[string]interface{} {
-	inp, ok := tb["input"].(map[string]interface{})
-	if !ok {
-		return make(map[string]interface{})
-	}
-	return inp
-}
-
-// marshalNoEscape serializes to JSON without escaping Unicode characters,
-// matching Python's json.dumps(ensure_ascii=False) behavior.
-func marshalNoEscape(v interface{}) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return "{}"
-	}
-	// Encode appends a newline; strip it
-	s := buf.String()
-	return strings.TrimSuffix(s, "\n")
 }
 
 func formatNumber(n int) string {

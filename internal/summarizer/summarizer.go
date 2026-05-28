@@ -4,6 +4,8 @@ package summarizer
 import (
 	"fmt"
 	"strings"
+
+	"claude-code-session-reader/internal/jsonutil"
 )
 
 // UserAnswerPrefixes are the known prefixes for user answer tool results.
@@ -22,15 +24,15 @@ const (
 func SummarizeToolUse(name string, inp map[string]interface{}) string {
 	switch name {
 	case "Bash":
-		desc := getStr(inp, "description")
+		desc := jsonutil.GetStr(inp, "description")
 		if desc != "" {
 			return fmt.Sprintf("[Bash] %s", desc)
 		}
-		cmd := getStr(inp, "command")
+		cmd := jsonutil.GetStr(inp, "command")
 		return fmt.Sprintf("[Bash] %s", truncate(cmd, maxCommandLen))
 
 	case "Read":
-		path := getStr(inp, "file_path")
+		path := jsonutil.GetStr(inp, "file_path")
 		if path == "" {
 			path = "?"
 		}
@@ -44,7 +46,7 @@ func SummarizeToolUse(name string, inp map[string]interface{}) string {
 		return fmt.Sprintf("[Read] %s", short)
 
 	case "Edit":
-		path := getStr(inp, "file_path")
+		path := jsonutil.GetStr(inp, "file_path")
 		if path == "" {
 			path = "?"
 		}
@@ -56,7 +58,7 @@ func SummarizeToolUse(name string, inp map[string]interface{}) string {
 		return fmt.Sprintf("[Edit] %s", filename)
 
 	case "Write":
-		path := getStr(inp, "file_path")
+		path := jsonutil.GetStr(inp, "file_path")
 		if path == "" {
 			path = "?"
 		}
@@ -68,40 +70,40 @@ func SummarizeToolUse(name string, inp map[string]interface{}) string {
 		return fmt.Sprintf("[Write] %s", filename)
 
 	case "Agent":
-		desc := getStr(inp, "description")
+		desc := jsonutil.GetStr(inp, "description")
 		if desc == "" {
 			desc = "?"
 		}
-		sub := getStr(inp, "subagent_type")
+		sub := jsonutil.GetStr(inp, "subagent_type")
 		if sub != "" {
 			return fmt.Sprintf("[Agent(%s)] %s", sub, desc)
 		}
 		return fmt.Sprintf("[Agent] %s", desc)
 
 	case "Grep":
-		pat := getStr(inp, "pattern")
+		pat := jsonutil.GetStr(inp, "pattern")
 		if pat == "" {
 			pat = "?"
 		}
-		path := getStr(inp, "path")
+		path := jsonutil.GetStr(inp, "path")
 		if path != "" {
 			return fmt.Sprintf("[Grep] \"%s\" in %s", pat, path)
 		}
 		return fmt.Sprintf("[Grep] \"%s\"", pat)
 
 	case "Glob":
-		pat := getStr(inp, "pattern")
+		pat := jsonutil.GetStr(inp, "pattern")
 		if pat == "" {
 			pat = "?"
 		}
 		return fmt.Sprintf("[Glob] %s", pat)
 
 	case "Skill":
-		skill := getStr(inp, "skill")
+		skill := jsonutil.GetStr(inp, "skill")
 		if skill == "" {
 			skill = "?"
 		}
-		args := getStr(inp, "args")
+		args := jsonutil.GetStr(inp, "args")
 		result := fmt.Sprintf("[Skill] /%s %s", skill, args)
 		return truncate(strings.TrimSpace(result), maxSkillLen)
 
@@ -120,7 +122,7 @@ func SummarizeToolUse(name string, inp map[string]interface{}) string {
 			if !isMap {
 				continue
 			}
-			questionText := getStr(qMap, "question")
+			questionText := jsonutil.GetStr(qMap, "question")
 			if questionText == "" {
 				questionText = "?"
 			}
@@ -133,7 +135,7 @@ func SummarizeToolUse(name string, inp map[string]interface{}) string {
 		return strings.Join(lines, "\n  ")
 
 	case "ToolSearch":
-		query := getStr(inp, "query")
+		query := jsonutil.GetStr(inp, "query")
 		if query == "" {
 			query = "?"
 		}
@@ -184,7 +186,7 @@ func IsUserAnswer(entry map[string]interface{}) bool {
 		if !isMap {
 			continue
 		}
-		if getStr(block, "type") != "tool_result" {
+		if jsonutil.GetStr(block, "type") != "tool_result" {
 			continue
 		}
 		sub, isStr := block["content"].(string)
@@ -215,7 +217,7 @@ func ExtractUserAnswers(entry map[string]interface{}) string {
 		if !isMap {
 			continue
 		}
-		if getStr(block, "type") != "tool_result" {
+		if jsonutil.GetStr(block, "type") != "tool_result" {
 			continue
 		}
 		sub, isStr := block["content"].(string)
@@ -232,18 +234,6 @@ func ExtractUserAnswers(entry map[string]interface{}) string {
 }
 
 // --- helpers ---
-
-func getStr(m map[string]interface{}, key string) string {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return ""
-	}
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	return s
-}
 
 func truncate(s string, maxRunes int) string {
 	runes := []rune(s)
@@ -264,7 +254,7 @@ func extractFirstLineFromToolResult(entry map[string]interface{}) string {
 	}
 	for _, item := range content {
 		block, isMap := item.(map[string]interface{})
-		if !isMap || getStr(block, "type") != "tool_result" {
+		if !isMap || jsonutil.GetStr(block, "type") != "tool_result" {
 			continue
 		}
 		sub := block["content"]
