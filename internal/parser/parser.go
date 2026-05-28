@@ -84,10 +84,7 @@ func ResolveSessionID(prefix string) (string, error) {
 
 	var matches []string
 	_ = filepath.Walk(ProjectsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
+		if err != nil || info.IsDir() {
 			return nil
 		}
 		if filepath.Ext(path) == ".jsonl" {
@@ -117,7 +114,6 @@ func ResolveSessionID(prefix string) (string, error) {
 		}
 		return "", fmt.Errorf("ambiguous prefix '%s', matches: %s", prefix, strings.Join(shortIDs, ", "))
 	}
-	// No matches found — return prefix as-is (will fail later when file not found)
 	return prefix, nil
 }
 
@@ -143,68 +139,6 @@ func ParseTranscript(path string) ([]map[string]interface{}, error) {
 		return nil, fmt.Errorf("scan transcript: %w", err)
 	}
 	return entries, nil
-}
-
-// FormatTimestamp converts an ISO timestamp string to "MM-DD HH:MM" format.
-func FormatTimestamp(tsStr string) string {
-	if tsStr == "" {
-		return "??-?? ??:??"
-	}
-	// Handle Go time parsing for ISO 8601 with timezone
-	tsStr = strings.Replace(tsStr, "Z", "+00:00", 1)
-	t, err := time.Parse("2006-01-02T15:04:05-07:00", tsStr)
-	if err != nil {
-		// Try alternative formats
-		t, err = time.Parse("2006-01-02T15:04:05.000-07:00", tsStr)
-		if err != nil {
-			t, err = time.Parse("2006-01-02T15:04:05.000000-07:00", tsStr)
-			if err != nil {
-				return "??-?? ??:??"
-			}
-		}
-	}
-	return t.Format("01-02 15:04")
-}
-
-// ExtractText extracts text from a message content field.
-// Content can be a string or a list of content blocks.
-func ExtractText(content interface{}) string {
-	if s, ok := content.(string); ok {
-		return s
-	}
-	if arr, ok := content.([]interface{}); ok {
-		var parts []string
-		for _, item := range arr {
-			block, isMap := item.(map[string]interface{})
-			if !isMap {
-				continue
-			}
-			if jsonutil.GetStr(block, "type") == "text" {
-				parts = append(parts, jsonutil.GetStr(block, "text"))
-			}
-		}
-		return strings.Join(parts, "\n")
-	}
-	return ""
-}
-
-// GetToolUses extracts tool_use blocks from a content array.
-func GetToolUses(content interface{}) []map[string]interface{} {
-	arr, ok := content.([]interface{})
-	if !ok {
-		return nil
-	}
-	var results []map[string]interface{}
-	for _, item := range arr {
-		block, isMap := item.(map[string]interface{})
-		if !isMap {
-			continue
-		}
-		if jsonutil.GetStr(block, "type") == "tool_use" {
-			results = append(results, block)
-		}
-	}
-	return results
 }
 
 // CollectAgentToolIDs pre-scans a transcript to find tool_use blocks with name "Agent",
@@ -248,100 +182,6 @@ func CollectAgentToolIDs(path string) (map[string]bool, error) {
 	return ids, nil
 }
 
-// ExtractToolResultText extracts text content and tool_use_id from a tool_result entry.
-func ExtractToolResultText(entry map[string]interface{}) (string, string) {
-	message := jsonutil.GetMap(entry, "message")
-	if message == nil {
-		return "", ""
-	}
-	content, ok := message["content"].([]interface{})
-	if !ok {
-		return "", ""
-	}
-	for _, item := range content {
-		block, isMap := item.(map[string]interface{})
-		if !isMap || jsonutil.GetStr(block, "type") != "tool_result" {
-			continue
-		}
-		toolUseID := jsonutil.GetStr(block, "tool_use_id")
-		sub := block["content"]
-		if s, ok := sub.(string); ok {
-			return s, toolUseID
-		}
-		if subArr, ok := sub.([]interface{}); ok {
-			var parts []string
-			for _, subItem := range subArr {
-				subBlock, isMap := subItem.(map[string]interface{})
-				if !isMap || jsonutil.GetStr(subBlock, "type") != "text" {
-					continue
-				}
-				parts = append(parts, jsonutil.GetStr(subBlock, "text"))
-			}
-			return strings.Join(parts, "\n"), toolUseID
-		}
-	}
-	return "", ""
-}
-
-// ExtractAllText extracts all text content from an entry, including tool inputs and results.
-func ExtractAllText(entry map[string]interface{}) string {
-	var parts []string
-	message := jsonutil.GetMap(entry, "message")
-	if message == nil {
-		return ""
-	}
-	content := message["content"]
-	if s, ok := content.(string); ok {
-		parts = append(parts, s)
-	} else if arr, ok := content.([]interface{}); ok {
-		for _, item := range arr {
-			block, isMap := item.(map[string]interface{})
-			if !isMap {
-				continue
-			}
-			switch jsonutil.GetStr(block, "type") {
-			case "text":
-				parts = append(parts, jsonutil.GetStr(block, "text"))
-			case "tool_use":
-				inp := block["input"]
-				if inp != nil {
-					parts = append(parts, jsonutil.MarshalNoEscape(inp))
-				}
-			case "tool_result":
-				sub := block["content"]
-				if s, ok := sub.(string); ok {
-					parts = append(parts, s)
-				} else if subArr, ok := sub.([]interface{}); ok {
-					for _, subItem := range subArr {
-						subBlock, isSubMap := subItem.(map[string]interface{})
-						if !isSubMap || jsonutil.GetStr(subBlock, "type") != "text" {
-							continue
-						}
-						parts = append(parts, jsonutil.GetStr(subBlock, "text"))
-					}
-				}
-			}
-		}
-	}
-
-	tr := jsonutil.GetMap(entry, "toolUseResult")
-	if tr != nil {
-		for _, key := range []string{"stdout", "stderr", "output"} {
-			if v, ok := tr[key]; ok && v != nil {
-				parts = append(parts, fmt.Sprintf("%v", v))
-			}
-		}
-	}
-
-	return strings.Join(parts, "\n")
-}
-
-// IsNoise returns true if the entry is a noise type that should be skipped.
-func IsNoise(entry map[string]interface{}) bool {
-	entryType := jsonutil.GetStr(entry, "type")
-	return NoiseTypes[entryType] || entryType == "system"
-}
-
 // SessionMetaFile holds metadata about a session, used for listing.
 type SessionMetaFile struct {
 	Path    string
@@ -374,4 +214,18 @@ func ListSessionMetaFiles() ([]SessionMetaFile, error) {
 		return files[i].ModTime.After(files[j].ModTime)
 	})
 	return files, nil
+}
+
+func parseISO(s string) (time.Time, error) {
+	formats := []string{
+		"2006-01-02T15:04:05-07:00",
+		"2006-01-02T15:04:05.000-07:00",
+		"2006-01-02T15:04:05.000000-07:00",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unparseable timestamp: %s", s)
 }
