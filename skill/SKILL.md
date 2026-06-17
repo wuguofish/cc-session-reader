@@ -11,6 +11,9 @@ allowed-tools:
 
 # Session Reader
 
+`sessions` 是安裝在 `$PATH` 中的 Go binary（不是 skill 目錄下的腳本）。
+直接用 Bash 呼叫 `sessions <subcommand>`，不要 cd 到 skill 目錄或嘗試 `node cli.js`。
+
 ## 選擇子命令
 
 | 意圖 | 命令 |
