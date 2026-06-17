@@ -12,8 +12,8 @@ import (
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/session"
 )
 
-func FormatContextWithStore(transcriptPath string, sessionID string, maxLines int, offset int, opts FormatOptions, out io.Writer, store parser.Store) error {
-	events, agentIDs, err := loadEvents(transcriptPath, opts.VerboseAgents)
+func FormatContextWithStore(transcriptPath string, sessionID string, maxLines int, offset int, opts FormatOptions, out io.Writer, store parser.Store, reader session.TranscriptReader) error {
+	events, agentIDs, err := loadEvents(transcriptPath, opts.VerboseAgents, reader)
 	if err != nil {
 		return err
 	}

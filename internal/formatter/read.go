@@ -10,8 +10,8 @@ import (
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/session"
 )
 
-func FormatRead(transcriptPath string, maxLines int, offset int, opts FormatOptions, out io.Writer) error {
-	events, agentIDs, err := loadEvents(transcriptPath, opts.VerboseAgents)
+func FormatRead(transcriptPath string, maxLines int, offset int, opts FormatOptions, out io.Writer, reader session.TranscriptReader) error {
+	events, agentIDs, err := loadEvents(transcriptPath, opts.VerboseAgents, reader)
 	if err != nil {
 		return err
 	}

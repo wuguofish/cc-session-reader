@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/claudecodec"
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/session"
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/summarizer"
 )
@@ -84,14 +83,14 @@ type pendingTool struct {
 	name    string // e.g. "Bash", "Read", "Edit"
 }
 
-func loadEvents(transcriptPath string, isVerboseAgents bool) ([]session.Event, map[string]bool, error) {
-	events, err := claudecodec.ReadAll(transcriptPath)
+func loadEvents(transcriptPath string, isVerboseAgents bool, reader session.TranscriptReader) ([]session.Event, map[string]bool, error) {
+	events, err := reader.ReadAll(transcriptPath)
 	if err != nil {
 		return nil, nil, err
 	}
 	agentIDs := map[string]bool{}
 	if isVerboseAgents {
-		agentIDs = claudecodec.CollectAgentToolIDs(events)
+		agentIDs = session.CollectAgentToolIDs(events)
 	}
 	return events, agentIDs, nil
 }

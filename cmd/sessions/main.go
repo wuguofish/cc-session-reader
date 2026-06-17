@@ -36,20 +36,22 @@ func main() {
 
 	defer waitUsageLog()
 
+	reader := claudecodec.Codec{}
+
 	subcommand := os.Args[1]
 	switch subcommand {
 	case "list":
 		cmdList(os.Args[2:])
 	case "read":
-		cmdRead(os.Args[2:])
+		cmdRead(os.Args[2:], reader)
 	case "context":
-		cmdContext(os.Args[2:])
+		cmdContext(os.Args[2:], reader)
 	case "stats":
-		cmdStats(os.Args[2:])
+		cmdStats(os.Args[2:], reader)
 	case "audit":
-		cmdAudit(os.Args[2:])
+		cmdAudit(os.Args[2:], reader)
 	case "expand":
-		cmdExpand(os.Args[2:])
+		cmdExpand(os.Args[2:], reader)
 	case "usage":
 		cmdUsage(os.Args[2:])
 	default:
@@ -125,14 +127,14 @@ func runList(args []string, out io.Writer, errOut io.Writer, store parser.Store)
 	return nil
 }
 
-func cmdRead(args []string) {
-	if err := runRead(args, os.Stdout, os.Stderr, parser.DefaultStore()); err != nil {
+func cmdRead(args []string, reader session.TranscriptReader) {
+	if err := runRead(args, os.Stdout, os.Stderr, parser.DefaultStore(), reader); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runRead(args []string, out io.Writer, errOut io.Writer, store parser.Store) error {
+func runRead(args []string, out io.Writer, errOut io.Writer, store parser.Store, reader session.TranscriptReader) error {
 	fs := flag.NewFlagSet("read", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	maxLines := fs.Int("max-lines", 200, "max output lines (0=unlimited)")
@@ -160,17 +162,17 @@ func runRead(args []string, out io.Writer, errOut io.Writer, store parser.Store)
 	logUsageAsync("read", session.ShortID(resolved.ID, 8))
 
 	opts := formatter.FormatOptions{VerboseAgents: *isVerboseAgents, VerboseBash: *isVerboseBash, VerboseThinking: *isVerboseThinking, VerboseCommands: *isVerboseCommands}
-	return formatter.FormatRead(resolved.Path, *maxLines, *offset, opts, out)
+	return formatter.FormatRead(resolved.Path, *maxLines, *offset, opts, out, reader)
 }
 
-func cmdContext(args []string) {
-	if err := runContext(args, os.Stdout, os.Stderr, parser.DefaultStore()); err != nil {
+func cmdContext(args []string, reader session.TranscriptReader) {
+	if err := runContext(args, os.Stdout, os.Stderr, parser.DefaultStore(), reader); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runContext(args []string, out io.Writer, errOut io.Writer, store parser.Store) error {
+func runContext(args []string, out io.Writer, errOut io.Writer, store parser.Store, reader session.TranscriptReader) error {
 	fs := flag.NewFlagSet("context", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	maxLines := fs.Int("max-lines", 200, "max output lines (0=unlimited)")
@@ -196,17 +198,17 @@ func runContext(args []string, out io.Writer, errOut io.Writer, store parser.Sto
 	logUsageAsync("context", session.ShortID(resolved.ID, 8))
 
 	opts := formatter.FormatOptions{VerboseAgents: *isVerboseAgents, VerboseBash: *isVerboseBash, VerboseThinking: *isVerboseThinking, VerboseCommands: *isVerboseCommands}
-	return formatter.FormatContextWithStore(resolved.Path, resolved.ID, *maxLines, *offset, opts, out, store)
+	return formatter.FormatContextWithStore(resolved.Path, resolved.ID, *maxLines, *offset, opts, out, store, reader)
 }
 
-func cmdStats(args []string) {
-	if err := runStats(args, os.Stdout, os.Stderr, parser.DefaultStore()); err != nil {
+func cmdStats(args []string, reader session.TranscriptReader) {
+	if err := runStats(args, os.Stdout, os.Stderr, parser.DefaultStore(), reader); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runStats(args []string, out io.Writer, errOut io.Writer, store parser.Store) error {
+func runStats(args []string, out io.Writer, errOut io.Writer, store parser.Store, reader session.TranscriptReader) error {
 	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	isNoTokens := fs.Bool("no-tokens", false, "skip token counting")
@@ -220,7 +222,7 @@ func runStats(args []string, out io.Writer, errOut io.Writer, store parser.Store
 	}
 	logUsageAsync("stats", session.ShortID(resolved.ID, 8))
 
-	events, err := claudecodec.ReadAll(resolved.Path)
+	events, err := reader.ReadAll(resolved.Path)
 	if err != nil {
 		return fmt.Errorf("parsing transcript: %w", err)
 	}
@@ -363,14 +365,14 @@ func runStats(args []string, out io.Writer, errOut io.Writer, store parser.Store
 	return nil
 }
 
-func cmdAudit(args []string) {
-	if err := runAudit(args, os.Stdout, os.Stderr, parser.DefaultStore()); err != nil {
+func cmdAudit(args []string, reader session.TranscriptReader) {
+	if err := runAudit(args, os.Stdout, os.Stderr, parser.DefaultStore(), reader); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runAudit(args []string, out io.Writer, errOut io.Writer, store parser.Store) error {
+func runAudit(args []string, out io.Writer, errOut io.Writer, store parser.Store, reader session.TranscriptReader) error {
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	samples := fs.Int("n", 5, "number of samples per category")
@@ -387,7 +389,7 @@ func runAudit(args []string, out io.Writer, errOut io.Writer, store parser.Store
 	}
 	logUsageAsync("audit", session.ShortID(resolved.ID, 8))
 
-	events, err := claudecodec.ReadAll(resolved.Path)
+	events, err := reader.ReadAll(resolved.Path)
 	if err != nil {
 		return fmt.Errorf("parsing transcript: %w", err)
 	}
@@ -411,14 +413,14 @@ func runAudit(args []string, out io.Writer, errOut io.Writer, store parser.Store
 	return nil
 }
 
-func cmdExpand(args []string) {
-	if err := runExpand(args, os.Stdout, os.Stderr, parser.DefaultStore()); err != nil {
+func cmdExpand(args []string, reader session.TranscriptReader) {
+	if err := runExpand(args, os.Stdout, os.Stderr, parser.DefaultStore(), reader); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runExpand(args []string, out io.Writer, errOut io.Writer, store parser.Store) error {
+func runExpand(args []string, out io.Writer, errOut io.Writer, store parser.Store, reader session.TranscriptReader) error {
 	if len(args) < 2 {
 		return fmt.Errorf("usage: sessions expand <session-id> <tool-id> [tool-id...]")
 	}
@@ -435,7 +437,7 @@ func runExpand(args []string, out io.Writer, errOut io.Writer, store parser.Stor
 	}
 	logUsageAsync("expand", session.ShortID(resolved.ID, 8))
 
-	events, err := claudecodec.ReadAll(resolved.Path)
+	events, err := reader.ReadAll(resolved.Path)
 	if err != nil {
 		return fmt.Errorf("parsing transcript: %w", err)
 	}

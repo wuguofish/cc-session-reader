@@ -360,6 +360,23 @@ func CompactCommandInjection(text string) (string, bool) {
 	return name, true
 }
 
+// CollectAgentToolIDs returns a set of tool_use_ids from Agent tool invocations
+// in the given events. Used by formatters to identify agent results.
+func CollectAgentToolIDs(events []Event) map[string]bool {
+	ids := make(map[string]bool)
+	for _, event := range events {
+		if event.Assistant == nil {
+			continue
+		}
+		for _, tool := range event.Assistant.ToolUses {
+			if tool.Name == ToolAgent && tool.ID != "" {
+				ids[tool.ID] = true
+			}
+		}
+	}
+	return ids
+}
+
 func extractXMLTag(text, tag string) string {
 	open := "<" + tag + ">"
 	close := "</" + tag + ">"

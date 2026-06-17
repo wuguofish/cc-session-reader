@@ -144,17 +144,9 @@ func ParseLine(line []byte) (session.Event, bool, error) {
 	}
 }
 
-func CollectAgentToolIDs(events []session.Event) map[string]bool {
-	ids := make(map[string]bool)
-	for _, event := range events {
-		if event.Assistant == nil {
-			continue
-		}
-		for _, tool := range event.Assistant.ToolUses {
-			if tool.Name == session.ToolAgent && tool.ID != "" {
-				ids[tool.ID] = true
-			}
-		}
-	}
-	return ids
+// Codec implements session.TranscriptReader for Claude Code JSONL transcripts.
+type Codec struct{}
+
+func (Codec) ReadAll(path string) ([]session.Event, error) {
+	return ReadAll(path)
 }

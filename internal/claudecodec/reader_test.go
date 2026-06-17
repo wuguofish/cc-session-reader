@@ -144,7 +144,7 @@ func TestCollectAgentToolIDs(t *testing.T) {
 			}},
 		},
 	}
-	ids := CollectAgentToolIDs(events)
+	ids := session.CollectAgentToolIDs(events)
 	if !ids["agent-1"] || ids["bash-1"] {
 		t.Fatalf("ids = %#v", ids)
 	}
@@ -245,7 +245,7 @@ func TestReadAll_GivenMixedEntryTypes_ThenAggregatesEventsInOrder(t *testing.T) 
 	}
 
 	// Agent tool IDs are collected from the aggregated events.
-	agentIDs := CollectAgentToolIDs(events)
+	agentIDs := session.CollectAgentToolIDs(events)
 	if !agentIDs["toolu_agent_1"] {
 		t.Fatalf("agent IDs = %#v, want toolu_agent_1 collected", agentIDs)
 	}

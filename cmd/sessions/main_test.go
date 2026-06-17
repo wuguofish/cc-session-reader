@@ -17,6 +17,9 @@ import (
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/tokens"
 )
 
+// testReader is the concrete reader used by all tests.
+var testReader = claudecodec.Codec{}
+
 func TestSampleCount(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -245,7 +248,7 @@ func TestRunRead_WhenMaxLinesIsNegative_ThenReturnsValidationError(t *testing.T)
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 	var stdout, stderr bytes.Buffer
-	err := runRead([]string{sid, "-max-lines", "-1"}, &stdout, &stderr, store)
+	err := runRead([]string{sid, "-max-lines", "-1"}, &stdout, &stderr, store, testReader)
 	if err == nil {
 		t.Fatal("runRead(-max-lines -1) returned nil error, want validation error")
 	}
@@ -264,7 +267,7 @@ func TestRunRead_WhenMaxLinesIsZero_ThenEmitsUnlimitedOutput(t *testing.T) {
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 	var stdout, stderr bytes.Buffer
-	if err := runRead([]string{sid, "-max-lines", "0"}, &stdout, &stderr, store); err != nil {
+	if err := runRead([]string{sid, "-max-lines", "0"}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runRead(-max-lines 0) returned error: %v", err)
 	}
 	got := stdout.String()
@@ -288,17 +291,17 @@ func TestRunCommands_WhenSessionIDIsEmpty_ThenReturnsRequiredError(t *testing.T)
 	}{
 		{
 			name: "read",
-			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runRead(a, o, e, s) },
+			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runRead(a, o, e, s, testReader) },
 			args: []string{""},
 		},
 		{
 			name: "stats",
-			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runStats(a, o, e, s) },
+			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runStats(a, o, e, s, testReader) },
 			args: []string{""},
 		},
 		{
 			name: "expand",
-			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runExpand(a, o, e, s) },
+			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runExpand(a, o, e, s, testReader) },
 			args: []string{"", "uCVa"}, // expand needs a tool ID arg too
 		},
 	}
@@ -321,7 +324,7 @@ func TestRunCommands_WhenSessionIDIsEmpty_ThenReturnsRequiredError(t *testing.T)
 
 func TestRunRead_WhenSessionIDIsMissing_ThenReturnsError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	err := runRead(nil, &stdout, &stderr, parser.Store{})
+	err := runRead(nil, &stdout, &stderr, parser.Store{}, testReader)
 	if err == nil {
 		t.Fatal("runRead returned nil error, want missing session_id")
 	}
@@ -338,7 +341,7 @@ func TestRunRead_WhenSessionExists_ThenWritesOutput(t *testing.T) {
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 
-	err := runRead([]string{sid}, &stdout, &stderr, store)
+	err := runRead([]string{sid}, &stdout, &stderr, store, testReader)
 	if err != nil {
 		t.Fatalf("runRead returned error: %v", err)
 	}
@@ -355,7 +358,7 @@ func TestRunContext_WhenSessionExists_ThenWritesHeaderAndContext(t *testing.T) {
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 
-	err := runContext([]string{sid}, &stdout, &stderr, store)
+	err := runContext([]string{sid}, &stdout, &stderr, store, testReader)
 	if err != nil {
 		t.Fatalf("runContext returned error: %v", err)
 	}
@@ -373,7 +376,7 @@ func TestRunStats_WhenNoTokens_ThenWritesCharacterBreakdown(t *testing.T) {
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 
-	err := runStats([]string{"--no-tokens", sid}, &stdout, &stderr, store)
+	err := runStats([]string{"--no-tokens", sid}, &stdout, &stderr, store, testReader)
 	if err != nil {
 		t.Fatalf("runStats returned error: %v", err)
 	}
@@ -423,7 +426,7 @@ func TestRunStats_WhenTokenAPIUnavailable_ThenFallsBackToEstimate(t *testing.T) 
 
 	var stdout, stderr bytes.Buffer
 	// No --no-tokens: we want the token-counting path to actually run.
-	if err := runStats([]string{sid}, &stdout, &stderr, store); err != nil {
+	if err := runStats([]string{sid}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runStats returned error: %v", err)
 	}
 	got := stdout.String()
@@ -538,7 +541,7 @@ func TestRunStats_WhenTokenAPISucceeds_ThenPrintsAPITokenCounts(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if err := runStats([]string{sid}, &stdout, &stderr, store); err != nil {
+	if err := runStats([]string{sid}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runStats returned error: %v", err)
 	}
 	got := stdout.String()
@@ -593,7 +596,7 @@ func TestRunAudit_WhenSampleCountIsNotPositive_ThenReturnsValidationError(t *tes
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			// Store is irrelevant: validation must reject before any session lookup.
-			err := runAudit([]string{"anysession", "-n", tt.nFlag}, &stdout, &stderr, parser.Store{})
+			err := runAudit([]string{"anysession", "-n", tt.nFlag}, &stdout, &stderr, parser.Store{}, testReader)
 			if err == nil {
 				t.Fatalf("runAudit(-n %s) returned nil error, want validation error", tt.nFlag)
 			}
@@ -626,7 +629,7 @@ func TestRunExpand_GivenExistingToolID_WhenExpanded_ThenShowsFullInputAndResult(
 		SessionMetaDir: metaDir,
 	}
 	// Short ID of "toolu_01XYZabcdefgABCDuCVa" -> last 4 chars = "uCVa"
-	err := runExpand([]string{sid, "uCVa"}, &stdout, &stderr, store)
+	err := runExpand([]string{sid, "uCVa"}, &stdout, &stderr, store, testReader)
 	if err != nil {
 		t.Fatalf("runExpand returned error: %v", err)
 	}
@@ -681,7 +684,7 @@ func TestRunExpand_GivenShortIDCollision_WhenExpanded_ThenWarnsAndDoesNotGuess(t
 		ProjectsDir:    filepath.Join(root, ".claude", "projects"),
 		SessionMetaDir: metaDir,
 	}
-	err := runExpand([]string{sid, "uCVa"}, &stdout, &stderr, store)
+	err := runExpand([]string{sid, "uCVa"}, &stdout, &stderr, store, testReader)
 
 	// The only requested ID is ambiguous, so nothing was expanded -> error.
 	if err == nil {
@@ -731,7 +734,7 @@ func TestRunExpand_GivenFullIDOnCollision_WhenExpanded_ThenResolvesUnambiguously
 		ProjectsDir:    filepath.Join(root, ".claude", "projects"),
 		SessionMetaDir: metaDir,
 	}
-	if err := runExpand([]string{sid, secondID}, &stdout, &stderr, store); err != nil {
+	if err := runExpand([]string{sid, secondID}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runExpand returned error: %v", err)
 	}
 	got := stdout.String()
@@ -753,7 +756,7 @@ func TestRunExpand_GivenNonexistentToolID_WhenExpanded_ThenReturnsError(t *testi
 		ProjectsDir:    filepath.Join(root, ".claude", "projects"),
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
-	err := runExpand([]string{sid, "ZZZZ"}, &stdout, &stderr, store)
+	err := runExpand([]string{sid, "ZZZZ"}, &stdout, &stderr, store, testReader)
 	if err == nil {
 		t.Fatal("runExpand should return error when no tool IDs match")
 	}
@@ -764,7 +767,7 @@ func TestRunExpand_GivenNonexistentToolID_WhenExpanded_ThenReturnsError(t *testi
 
 func TestRunExpand_GivenNoArgs_WhenCalled_ThenReturnsUsageError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	err := runExpand(nil, &stdout, &stderr, parser.Store{})
+	err := runExpand(nil, &stdout, &stderr, parser.Store{}, testReader)
 	if err == nil {
 		t.Fatal("runExpand should return error with no args")
 	}
@@ -821,11 +824,11 @@ func TestRunReadContext_VerboseFlagWiring_GatesPayloadBehindFlagString(t *testin
 	}{
 		{
 			name: "read",
-			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runRead(a, o, e, s) },
+			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runRead(a, o, e, s, testReader) },
 		},
 		{
 			name: "context",
-			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runContext(a, o, e, s) },
+			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runContext(a, o, e, s, testReader) },
 		},
 	}
 	cases := []struct {
@@ -1069,7 +1072,7 @@ func TestRunRead_GivenLargeSession_WhenDefaultFlags_ThenTruncatesAt200(t *testin
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 	var stdout, stderr bytes.Buffer
-	if err := runRead([]string{sid}, &stdout, &stderr, store); err != nil {
+	if err := runRead([]string{sid}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runRead returned error: %v", err)
 	}
 	got := stdout.String()
@@ -1091,7 +1094,7 @@ func TestRunRead_GivenLargeSession_WhenOffsetFlag_ThenSkipsLines(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	// -max-lines 0 (unlimited) so we see whether offset works independently.
-	if err := runRead([]string{sid, "-offset", "3", "-max-lines", "0"}, &stdout, &stderr, store); err != nil {
+	if err := runRead([]string{sid, "-offset", "3", "-max-lines", "0"}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runRead with -offset 3 returned error: %v", err)
 	}
 	got := stdout.String()
@@ -1115,7 +1118,7 @@ func TestRunRead_GivenLargeSession_WhenMaxLinesZero_ThenEmitsUnlimitedOutput(t *
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 	var stdout, stderr bytes.Buffer
-	if err := runRead([]string{sid, "-max-lines", "0"}, &stdout, &stderr, store); err != nil {
+	if err := runRead([]string{sid, "-max-lines", "0"}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runRead(-max-lines 0) returned error: %v", err)
 	}
 	got := stdout.String()
@@ -1137,7 +1140,7 @@ func TestRunContext_GivenLargeSession_WhenDefaultFlags_ThenTruncatesAt200(t *tes
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 	var stdout, stderr bytes.Buffer
-	if err := runContext([]string{sid}, &stdout, &stderr, store); err != nil {
+	if err := runContext([]string{sid}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runContext returned error: %v", err)
 	}
 	got := stdout.String()
@@ -1158,7 +1161,7 @@ func TestRunContext_GivenLargeSession_WhenOffsetAndMaxLines_ThenWindowsOutput(t 
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 	var stdout, stderr bytes.Buffer
-	if err := runContext([]string{sid, "-offset", "3", "-max-lines", "3"}, &stdout, &stderr, store); err != nil {
+	if err := runContext([]string{sid, "-offset", "3", "-max-lines", "3"}, &stdout, &stderr, store, testReader); err != nil {
 		t.Fatalf("runContext with -offset and -max-lines returned error: %v", err)
 	}
 	got := stdout.String()
@@ -1180,7 +1183,7 @@ func TestRunRead_GivenNegativeOffset_WhenCalled_ThenReturnsValidationError(t *te
 		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
 	}
 	var stdout, stderr bytes.Buffer
-	err := runRead([]string{sid, "-offset", "-1"}, &stdout, &stderr, store)
+	err := runRead([]string{sid, "-offset", "-1"}, &stdout, &stderr, store, testReader)
 	if err == nil {
 		t.Fatal("runRead(-offset -1) returned nil error, want validation error")
 	}

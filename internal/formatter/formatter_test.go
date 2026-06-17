@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/claudecodec"
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/parser"
 	"github.com/Mapleeeeeeeeeee/cc-session-reader/internal/session"
 )
@@ -16,7 +17,7 @@ func TestFormatRead_WhenTranscriptHasDialogueAndToolUse_ThenWritesReadableTimeli
 	transcriptPath, _ := writeFormatterFixture(t)
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{}, &out); err != nil {
+	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{}, &out, claudecodec.Codec{}); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -40,7 +41,7 @@ func TestFormatContext_WhenSessionMetadataExists_ThenWritesCompactContextWithHea
 
 	var out bytes.Buffer
 	store := parser.Store{SessionMetaDir: metaDir}
-	if err := FormatContextWithStore(transcriptPath, formatterFixtureSessionID, 0, 0, FormatOptions{}, &out, store); err != nil {
+	if err := FormatContextWithStore(transcriptPath, formatterFixtureSessionID, 0, 0, FormatOptions{}, &out, store, claudecodec.Codec{}); err != nil {
 		t.Fatalf("FormatContext returned error: %v", err)
 	}
 
@@ -64,7 +65,7 @@ func TestFormatRead_WhenMaxLinesReached_ThenStopsWithTruncationMessage(t *testin
 	transcriptPath, _ := writeFormatterFixture(t)
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 3, 0, FormatOptions{}, &out); err != nil {
+	if err := FormatRead(transcriptPath, 3, 0, FormatOptions{}, &out, claudecodec.Codec{}); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -90,7 +91,7 @@ func TestFormatRead_WhenVerboseAgents_ThenWritesFullAgentResult(t *testing.T) {
 	transcriptPath, _ := writeAgentFormatterFixture(t)
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{VerboseAgents: true}, &out); err != nil {
+	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{VerboseAgents: true}, &out, claudecodec.Codec{}); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -113,7 +114,7 @@ func TestFormatRead_WhenVerboseThinkingDisabled_ThenOmitsThinkingBlocks(t *testi
 	transcriptPath := writeThinkingFormatterFixture(t)
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{}, &out); err != nil {
+	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{}, &out, claudecodec.Codec{}); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -139,7 +140,7 @@ func TestFormatRead_WhenVerboseThinkingEnabled_ThenRendersEachThinkingBlock(t *t
 	transcriptPath := writeThinkingFormatterFixture(t)
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{VerboseThinking: true}, &out); err != nil {
+	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{VerboseThinking: true}, &out, claudecodec.Codec{}); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
@@ -359,7 +360,7 @@ func TestFormatRead_WhenToolResultHasNoPendingTool_ThenStillWritesSummary(t *tes
 	}
 
 	var out bytes.Buffer
-	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{}, &out); err != nil {
+	if err := FormatRead(transcriptPath, 0, 0, FormatOptions{}, &out, claudecodec.Codec{}); err != nil {
 		t.Fatalf("FormatRead returned error: %v", err)
 	}
 
