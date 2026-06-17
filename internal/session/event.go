@@ -206,3 +206,41 @@ func Truncate(s string, maxRunes int) string {
 	}
 	return string(runes[:maxRunes])
 }
+
+// CompactTaskNotification strips XML boilerplate from task-notification
+// messages, keeping only the summary and result content. Returns the
+// compacted text and true, or ("", false) if the input is not a
+// task-notification.
+func CompactTaskNotification(text string) (string, bool) {
+	if !strings.Contains(text, "<task-notification>") {
+		return "", false
+	}
+	summary := extractXMLTag(text, "summary")
+	result := extractXMLTag(text, "result")
+	if summary == "" && result == "" {
+		return "", false
+	}
+	var b strings.Builder
+	if summary != "" {
+		b.WriteString("[" + summary + "]\n")
+	}
+	if result != "" {
+		b.WriteString(result)
+	}
+	return strings.TrimSpace(b.String()), true
+}
+
+func extractXMLTag(text, tag string) string {
+	open := "<" + tag + ">"
+	close := "</" + tag + ">"
+	start := strings.Index(text, open)
+	if start < 0 {
+		return ""
+	}
+	start += len(open)
+	end := strings.Index(text[start:], close)
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(text[start : start+end])
+}

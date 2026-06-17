@@ -57,6 +57,9 @@ func renderUserMessage(user *session.UserMessage, opts FormatOptions) userRender
 	if strings.TrimSpace(user.Text) == "" {
 		return userRender{}
 	}
+	if body, ok := session.CompactTaskNotification(user.Text); ok {
+		return userRender{body: body, show: true}
+	}
 	return userRender{body: user.Text, show: true}
 }
 

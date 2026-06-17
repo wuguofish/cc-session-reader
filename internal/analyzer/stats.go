@@ -91,7 +91,11 @@ func ComputeStats(events []session.Event) StatsResult {
 			}
 			categories["user_text"] += utf8.RuneCountInString(event.User.Text)
 			rawParts = append(rawParts, event.User.Text)
-			filteredParts = append(filteredParts, event.User.Text)
+			if compacted, ok := session.CompactTaskNotification(event.User.Text); ok {
+				filteredParts = append(filteredParts, compacted)
+			} else {
+				filteredParts = append(filteredParts, event.User.Text)
+			}
 
 		case session.EventAssistantMessage:
 			if event.Assistant == nil {
