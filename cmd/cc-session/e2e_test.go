@@ -17,6 +17,15 @@ func binaryName() string {
 	return "cc-session"
 }
 
+func homeEnv(root string) []string {
+	env := os.Environ()
+	env = append(env, "HOME="+root)
+	if runtime.GOOS == "windows" {
+		env = append(env, "USERPROFILE="+root)
+	}
+	return env
+}
+
 func TestCLI_WhenSessionExists_ThenListReadContextAndAuditWorkEndToEnd(t *testing.T) {
 	root := t.TempDir()
 	bin := filepath.Join(root, binaryName())
@@ -97,7 +106,7 @@ func TestCLI_WhenSessionExists_ThenListReadContextAndAuditWorkEndToEnd(t *testin
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(bin, tt.args...)
-			cmd.Env = append(os.Environ(), "HOME="+root)
+			cmd.Env = homeEnv(root)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("%s failed: %v\n%s", strings.Join(tt.args, " "), err, out)
@@ -141,7 +150,7 @@ func TestCLI_WhenSubcommandFails_ThenPrintsErrorPrefixAndExitsNonZero(t *testing
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(bin, tt.args...)
-			cmd.Env = append(os.Environ(), "HOME="+root)
+			cmd.Env = homeEnv(root)
 			out, err := cmd.CombinedOutput()
 
 			var exitErr *exec.ExitError
