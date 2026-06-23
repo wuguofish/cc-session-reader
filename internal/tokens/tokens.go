@@ -35,11 +35,36 @@ const (
 // Resolves the API key from: env ANTHROPIC_API_KEY → config file path in
 // ~/.claude/skills/<skillDirName>/config.json → error.
 func CountTokensAPI(text string) (int, error) {
+	counter, err := NewCounter()
+	if err != nil {
+		return 0, err
+	}
+	return counter.Count(text)
+}
+
+// Counter counts tokens with a resolved API key and reusable HTTP client.
+type Counter struct {
+	apiKey   string
+	endpoint string
+	client   *http.Client
+}
+
+// NewCounter resolves credentials once and returns a reusable token counter.
+func NewCounter() (*Counter, error) {
 	apiKey := resolveAPIKey()
 	if apiKey == "" {
-		return 0, fmt.Errorf("ANTHROPIC_API_KEY not set (set env var or configure anthropic_api_key_file in ~/.claude/skills/%s/config.json)", skillpath.SkillDirName)
+		return nil, fmt.Errorf("ANTHROPIC_API_KEY not set (set env var or configure anthropic_api_key_file in ~/.claude/skills/%s/config.json)", skillpath.SkillDirName)
 	}
-	return countTokens(text, apiKey, countTokensURL, &http.Client{})
+	return &Counter{
+		apiKey:   apiKey,
+		endpoint: countTokensURL,
+		client:   &http.Client{},
+	}, nil
+}
+
+// Count returns the Anthropic input token count for text.
+func (c *Counter) Count(text string) (int, error) {
+	return countTokens(text, c.apiKey, c.endpoint, c.client)
 }
 
 func resolveAPIKey() string {

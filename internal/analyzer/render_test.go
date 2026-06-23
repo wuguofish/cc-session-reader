@@ -3,6 +3,7 @@ package analyzer
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -233,8 +234,9 @@ func TestRenderStats_GivenNoAPIDataAndTokenCounts_WhenRendered_ThenAnthropicAPIT
 	body := out.String()
 
 	assertOutputContains(t, body, "=== Tokens (Anthropic API) ===")
-	assertOutputContains(t, body, "1,800")
-	assertOutputContains(t, body, "900")
+	assertOutputContains(t, body, fmt.Sprintf("  Raw:      %10s\n", FormatNumber(1800)))
+	assertOutputContains(t, body, fmt.Sprintf("  Filtered: %10s\n", FormatNumber(900)))
+	assertOutputContains(t, body, fmt.Sprintf("  Saved:    %10s (50.0%%)\n", FormatNumber(900)))
 }
 
 func TestRenderStats_GivenNoAPIDataWithTokenError_WhenRendered_ThenConfigHintWrittenToOut(t *testing.T) {

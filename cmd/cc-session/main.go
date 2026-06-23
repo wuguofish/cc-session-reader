@@ -12,10 +12,22 @@ import (
 
 var version = "dev"
 
+type countTokensFunc func(string) (int, error)
+
 // countTokensFn is the token-counting backend used by runStats. It is a
 // package-level seam so tests can substitute a deterministic offline stub
 // (success or failure) without making real Anthropic API calls.
-var countTokensFn = tokens.CountTokensAPI
+var countTokensFn countTokensFunc = tokens.CountTokensAPI
+
+// newCountTokensFn builds a reusable token-counting backend for commands that
+// count multiple inputs in one run.
+var newCountTokensFn = func() (countTokensFunc, error) {
+	counter, err := tokens.NewCounter()
+	if err != nil {
+		return nil, err
+	}
+	return counter.Count, nil
+}
 
 func main() {
 	if len(os.Args) < 2 {

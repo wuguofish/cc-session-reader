@@ -108,9 +108,6 @@ func runBenchmark(args []string, out io.Writer, errOut io.Writer, store parser.S
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].fileSize > candidates[j].fileSize
 	})
-	if len(candidates) > *maxN {
-		candidates = candidates[:*maxN]
-	}
 
 	if len(candidates) == 0 {
 		fmt.Fprintln(out, "No sessions matched the filters.")
@@ -118,7 +115,11 @@ func runBenchmark(args []string, out io.Writer, errOut io.Writer, store parser.S
 	}
 
 	var results []sessionBenchResult
+	var tokenCounter countTokensFunc
 	for _, c := range candidates {
+		if len(results) >= *maxN {
+			break
+		}
 		events, err := reader.ReadAll(c.path)
 		if err != nil {
 			continue
@@ -138,7 +139,13 @@ func runBenchmark(args []string, out io.Writer, errOut io.Writer, store parser.S
 			continue
 		}
 
-		filteredToks, err := countTokensFn(stats.FilteredText)
+		if tokenCounter == nil {
+			tokenCounter, err = newCountTokensFn()
+			if err != nil {
+				return fmt.Errorf("initialize token counter: %w", err)
+			}
+		}
+		filteredToks, err := tokenCounter(stats.FilteredText)
 		if err != nil {
 			return fmt.Errorf("count filtered tokens for %s: %w", session.ShortID(c.entry.SessionID, 8), err)
 		}
