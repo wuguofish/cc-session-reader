@@ -72,6 +72,49 @@ func TestPrintCompressionSection_GivenEvenCount_ThenPrintsAveragedMedian(t *test
 	}
 }
 
+func TestResolveBenchmarkModel_GivenAcceptedModelNames_ThenReturnsPricingAndTokenCountingModel(t *testing.T) {
+	tests := []struct {
+		name                string
+		wantPricing         pricing
+		wantTokenCountModel string
+	}{
+		{name: "opus", wantPricing: pricingOpus, wantTokenCountModel: tokenCountModelOpus48},
+		{name: "opus-4-6", wantPricing: pricingOpus, wantTokenCountModel: tokenCountModelOpus46},
+		{name: "opus-4-7", wantPricing: pricingOpus, wantTokenCountModel: tokenCountModelOpus47},
+		{name: "opus-4-8", wantPricing: pricingOpus, wantTokenCountModel: tokenCountModelOpus48},
+		{name: "sonnet", wantPricing: pricingSonnet, wantTokenCountModel: tokenCountModelSonnet},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveBenchmarkModel(tt.name)
+			if err != nil {
+				t.Fatalf("resolveBenchmarkModel(%q) returned error: %v", tt.name, err)
+			}
+			if got.pricing != tt.wantPricing {
+				t.Fatalf("pricing = %+v, want %+v", got.pricing, tt.wantPricing)
+			}
+			if got.tokenCountModel != tt.wantTokenCountModel {
+				t.Fatalf("token count model = %q, want %q", got.tokenCountModel, tt.wantTokenCountModel)
+			}
+		})
+	}
+}
+
+func TestResolveBenchmarkModel_GivenUnknownModel_ThenReturnsAcceptedNames(t *testing.T) {
+	_, err := resolveBenchmarkModel("opus-4-5")
+	if err == nil {
+		t.Fatal("resolveBenchmarkModel returned nil error for unknown model")
+	}
+
+	got := err.Error()
+	for _, want := range []string{"opus", "opus-4-6", "opus-4-7", "opus-4-8", "sonnet"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("error message missing accepted model %q: %s", want, got)
+		}
+	}
+}
+
 func TestRunBenchmark_WhenSessionHasAPIUsage_ThenUsesTokenCountingAPIForNewContext(t *testing.T) {
 	root := t.TempDir()
 	sid := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -125,8 +168,8 @@ func TestRunBenchmark_WhenSessionHasAPIUsage_ThenUsesTokenCountingAPIForNewConte
 	if countedText == "" {
 		t.Fatal("countTokensFn was not called")
 	}
-	if countModel != tokenCountModelOpus {
-		t.Fatalf("token counter model = %q, want %q", countModel, tokenCountModelOpus)
+	if countModel != tokenCountModelOpus48 {
+		t.Fatalf("token counter model = %q, want %q", countModel, tokenCountModelOpus48)
 	}
 	got := stdout.String()
 	row := outputLineContaining(got, "aaaaaaaa")

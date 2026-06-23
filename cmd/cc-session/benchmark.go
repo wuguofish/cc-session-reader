@@ -32,9 +32,31 @@ var pricingOpus = pricing{CachedRead: 0.50, CacheWrite: 6.25, BaseInput: 5.00}
 var pricingSonnet = pricing{CachedRead: 0.30, CacheWrite: 3.75, BaseInput: 3.00}
 
 const (
-	tokenCountModelOpus   = "claude-opus-4-8"
+	tokenCountModelOpus46 = "claude-opus-4-6"
+	tokenCountModelOpus47 = "claude-opus-4-7"
+	tokenCountModelOpus48 = "claude-opus-4-8"
 	tokenCountModelSonnet = "claude-sonnet-4-6"
 )
+
+type benchmarkModelConfig struct {
+	pricing         pricing
+	tokenCountModel string
+}
+
+func resolveBenchmarkModel(model string) (benchmarkModelConfig, error) {
+	switch model {
+	case "sonnet":
+		return benchmarkModelConfig{pricing: pricingSonnet, tokenCountModel: tokenCountModelSonnet}, nil
+	case "opus", "opus-4-8":
+		return benchmarkModelConfig{pricing: pricingOpus, tokenCountModel: tokenCountModelOpus48}, nil
+	case "opus-4-7":
+		return benchmarkModelConfig{pricing: pricingOpus, tokenCountModel: tokenCountModelOpus47}, nil
+	case "opus-4-6":
+		return benchmarkModelConfig{pricing: pricingOpus, tokenCountModel: tokenCountModelOpus46}, nil
+	default:
+		return benchmarkModelConfig{}, fmt.Errorf("unknown model %q: must be opus, opus-4-6, opus-4-7, opus-4-8, or sonnet", model)
+	}
+}
 
 type sessionBenchResult struct {
 	shortID          string
@@ -57,7 +79,7 @@ func runBenchmark(args []string, out io.Writer, errOut io.Writer, store parser.S
 	days := fs.Int("days", 30, "how far back to scan")
 	minKB := fs.Int("min-kb", 100, "minimum JSONL file size in KB")
 	maxN := fs.Int("n", 10, "max sessions to include")
-	model := fs.String("model", "opus", "pricing model: opus or sonnet")
+	model := fs.String("model", "opus", "model: opus, opus-4-6, opus-4-7, opus-4-8, or sonnet")
 	overhead := fs.Int("overhead", 0, "session overhead tokens (system+tools+CLAUDE.md); measure with a 1-turn session")
 	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
@@ -70,18 +92,12 @@ func runBenchmark(args []string, out io.Writer, errOut io.Writer, store parser.S
 		overheadToks = defaultOverhead
 	}
 
-	var p pricing
-	var tokenCountModel string
-	switch *model {
-	case "sonnet":
-		p = pricingSonnet
-		tokenCountModel = tokenCountModelSonnet
-	case "opus":
-		p = pricingOpus
-		tokenCountModel = tokenCountModelOpus
-	default:
-		return fmt.Errorf("unknown model %q: must be opus or sonnet", *model)
+	modelConfig, err := resolveBenchmarkModel(*model)
+	if err != nil {
+		return err
 	}
+	p := modelConfig.pricing
+	tokenCountModel := modelConfig.tokenCountModel
 
 	all, _ := store.ListAllSessions()
 
