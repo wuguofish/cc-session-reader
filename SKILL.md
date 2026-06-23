@@ -38,7 +38,22 @@ cc-session stats <id>
 
 Session ID 支援 prefix match，前 8 碼通常就夠。
 
-## 分頁讀取
+## read vs inject
+
+兩者都能讀 session，選擇取決於目的：
+
+| | `read` | `inject` |
+|---|---|---|
+| **用途** | 回顧、掃描特定段落 | 完整載入為 context 供分析 |
+| **分頁** | 手動 `-offset` + `-max-lines` | 自動追蹤進度，重複呼叫即翻頁 |
+| **頁面大小** | 按行數（預設 200 行） | 按字元數（每頁 ≤20K chars） |
+| **適合場景** | 「看一下那個 session 討論了什麼」 | 「分析這個 session 的流程，找改善空間」 |
+
+**選擇指引**：
+- 使用者問特定問題（「上次那個 bug 怎麼修的」）→ `read`，跳到相關段落
+- 使用者要全局分析（「這個 session 有哪些流程可以改善」）→ `inject`，完整載入後分析
+
+## read 分頁
 
 大 session 的 read 輸出可達數千行。一次全倒會超出 Bash stdout buffer，
 被 harness 寫入 persisted-output 檔案，之後只能用 Read 分段載入——等同讀原始 JSONL。
@@ -53,6 +68,19 @@ Session ID 支援 prefix match，前 8 碼通常就夠。
 
 全文輸出用 `-max-lines 0`。只在確認輸出行數可控時使用。
 
+## inject 分頁
+
+`inject` 自動管理分頁狀態，不需要手動追蹤 offset：
+
+1. `cc-session inject <id>` → 第 1 頁
+2. `cc-session inject <id>` → 第 2 頁（自動推進）
+3. 重複直到顯示 `[inject complete]`
+
+| Flag | 說明 |
+|------|------|
+| `-page N` | 跳到第 N 頁（1-based） |
+| `-reset` | 清除進度，從頭開始 |
+
 ## Flags
 
 ### 分頁控制（read/context）
@@ -61,6 +89,13 @@ Session ID 支援 prefix match，前 8 碼通常就夠。
 |------|------|------|
 | `-max-lines N` | 200 | 輸出行數上限，0 = 無限制 |
 | `-offset N` | 0 | 從第 N 行開始輸出 |
+
+### inject 控制
+
+| Flag | 說明 |
+|------|------|
+| `-page N` | 跳到第 N 頁（1-based，0 = 自動推進） |
+| `-reset` | 清除進度狀態，下次從第 1 頁開始 |
 
 ### 詳細模式（read/context）
 
