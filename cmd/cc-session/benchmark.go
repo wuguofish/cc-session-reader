@@ -71,6 +71,9 @@ type sessionBenchResult struct {
 	breakEven        int
 	saving10Pct      float64
 	saving100Pct     float64
+	warmBreakEven    int
+	warmSaving10Pct  float64
+	warmSaving100Pct float64
 }
 
 func runBenchmark(args []string, out io.Writer, errOut io.Writer, store parser.Store, reader session.TranscriptReader) error {
@@ -249,6 +252,8 @@ func runBenchmark(args []string, out io.Writer, errOut io.Writer, store parser.S
 
 	printCompressionSection(out, results)
 	printCostSummary(out, results, p, *model)
+	fmt.Fprintln(out)
+	printWarmCostSummary(out, results, p, *model)
 
 	return nil
 }
@@ -400,6 +405,36 @@ func cumulativeCostA(turns int, x int, sp sessionCostParams, p pricing) float64 
 	return total
 }
 
+// cumulativeCostAWarm models staying in an existing session when cache is still warm.
+//
+// Cache TTL source: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+// Subscription users get a 1-hour cache TTL automatically. When you are continuously
+// working within that window, the entire prefix X is already cached — Turn 1 behaves
+// like Turn N≥2 in the cold model (cache read, not cache write).
+//
+// Turn N (all N, including N=1):
+//
+//	Call 1: cache read (prefix from previous turn, or X when N=1) + cache write (R + P)
+//	Calls 2..K: cache read (growing prefix) + cache write (tool I/O)
+func cumulativeCostAWarm(turns int, x int, sp sessionCostParams, p pricing) float64 {
+	total := 0.0
+	ki := int(math.Round(sp.k))
+	s := sp.toolIOPerCall
+	g := sp.growth
+	toolIOPerTurn := s * (ki - 1)
+	for n := 1; n <= turns; n++ {
+		// n=1: prefixFromPrev = X (fully cached); growth shifts by 1 vs cold because
+		// the previous turn's R is already in cache before our counting starts.
+		prefixFromPrev := float64(x) + float64(n-1)*float64(toolIOPerTurn) + float64(n-1)*float64(g)
+		total += prefixFromPrev*p.CachedRead/1e6 + float64(g)*p.CacheWrite/1e6
+		for c := 2; c <= ki; c++ {
+			prefix := prefixFromPrev + float64(g) + float64(s*(c-2))
+			total += prefix*p.CachedRead/1e6 + float64(s)*p.CacheWrite/1e6
+		}
+	}
+	return total
+}
+
 // cumulativeCostB models opening a new session and injecting compressed history.
 //
 // Setup: cache write (base) — one-time cost of injecting cc-session output.
@@ -457,6 +492,24 @@ func computeCostMetrics(r *sessionBenchResult, overheadTokens int, p pricing) {
 	if cost100A > 0 {
 		r.saving100Pct = (cost100A - cost100B) * 100.0 / cost100A
 	}
+
+	r.warmBreakEven = -1
+	for n := 1; n <= 200; n++ {
+		if cumulativeCostB(n, r.contextTokens, r.filteredTokens, sp, p) < cumulativeCostAWarm(n, r.contextTokens, sp, p) {
+			r.warmBreakEven = n
+			break
+		}
+	}
+
+	cost10Warm := cumulativeCostAWarm(10, r.contextTokens, sp, p)
+	if cost10Warm > 0 {
+		r.warmSaving10Pct = (cost10Warm - cost10B) * 100.0 / cost10Warm
+	}
+
+	cost100Warm := cumulativeCostAWarm(100, r.contextTokens, sp, p)
+	if cost100Warm > 0 {
+		r.warmSaving100Pct = (cost100Warm - cost100B) * 100.0 / cost100Warm
+	}
 }
 
 func printCostSummary(out io.Writer, results []sessionBenchResult, p pricing, modelName string) {
@@ -490,6 +543,55 @@ func printCostSummary(out io.Writer, results []sessionBenchResult, p pricing, mo
 		}
 		saving10s[i] = r.saving10Pct
 		saving100s[i] = r.saving100Pct
+	}
+
+	sort.Float64s(breakEvens)
+	sort.Float64s(saving10s)
+	sort.Float64s(saving100s)
+
+	beMedian := "never"
+	if len(breakEvens) > 0 {
+		beMedian = formatMedianTurn(medianFloat64(breakEvens))
+	}
+
+	fmt.Fprintf(out, "Median break-even: %s | 10-turn saving: %.0f%% | 100-turn saving: %.0f%%\n",
+		beMedian,
+		math.Round(medianFloat64(saving10s)),
+		math.Round(medianFloat64(saving100s)),
+	)
+}
+
+func printWarmCostSummary(out io.Writer, results []sessionBenchResult, p pricing, modelName string) {
+	fmt.Fprintf(out, "=== Warm Cache: Cost Savings Per Session (%s) ===\n", modelName)
+	fmt.Fprintf(out, "%-10s  %10s  %10s  %5s  %10s  %8s  %9s\n",
+		"Session", "Context", "NewCtx", "K", "Break-even", "10-turn", "100-turn")
+
+	for _, r := range results {
+		beStr := "never"
+		if r.warmBreakEven > 0 {
+			beStr = fmt.Sprintf("turn %d", r.warmBreakEven)
+		}
+		fmt.Fprintf(out, "%-10s  %10s  %10s  %5.1f  %10s  %7.0f%%  %8.0f%%\n",
+			r.shortID,
+			analyzer.FormatNumber(r.contextTokens),
+			analyzer.FormatNumber(r.newContextTokens),
+			r.callsPerTurn,
+			beStr,
+			math.Round(r.warmSaving10Pct),
+			math.Round(r.warmSaving100Pct),
+		)
+	}
+	fmt.Fprintln(out)
+
+	breakEvens := make([]float64, 0, len(results))
+	saving10s := make([]float64, len(results))
+	saving100s := make([]float64, len(results))
+	for i, r := range results {
+		if r.warmBreakEven > 0 {
+			breakEvens = append(breakEvens, float64(r.warmBreakEven))
+		}
+		saving10s[i] = r.warmSaving10Pct
+		saving100s[i] = r.warmSaving100Pct
 	}
 
 	sort.Float64s(breakEvens)
