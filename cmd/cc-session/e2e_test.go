@@ -80,17 +80,6 @@ func TestCLI_WhenSessionExists_ThenListReadContextAndAuditWorkEndToEnd(t *testin
 			},
 		},
 		{
-			name: "stats reports character breakdown without token API",
-			args: []string{"stats", "--no-tokens", sid},
-			want: []string{
-				"Session: 12345678",
-				"=== Characters ===",
-				"=== Breakdown ===",
-				"KEPT  user text:",
-				"CUT   tool result (raw):",
-			},
-		},
-		{
 			name: "expand shows full tool input and result for short ID",
 			args: []string{"expand", sid, "ol-1"},
 			want: []string{

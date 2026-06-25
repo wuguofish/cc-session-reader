@@ -283,7 +283,7 @@ func TestRunRead_WhenMaxLinesIsZero_ThenEmitsUnlimitedOutput(t *testing.T) {
 // every session, producing the misleading "ambiguous prefix ”" error. The user
 // simply omitted the ID, so the message must say it is required and must not
 // mention ambiguity. ResolveSession is the single choke point, so every command
-// that accepts a session_id inherits this; we cover read, stats, and expand
+// that accepts a session_id inherits this; we cover read and expand
 // (expand calls ResolveSession directly rather than via the helper).
 func TestRunCommands_WhenSessionIDIsEmpty_ThenReturnsRequiredError(t *testing.T) {
 	tests := []struct {
@@ -294,11 +294,6 @@ func TestRunCommands_WhenSessionIDIsEmpty_ThenReturnsRequiredError(t *testing.T)
 		{
 			name: "read",
 			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runRead(a, o, e, s, testReader) },
-			args: []string{""},
-		},
-		{
-			name: "stats",
-			run:  func(a []string, o, e *bytes.Buffer, s parser.Store) error { return runStats(a, o, e, s, testReader) },
 			args: []string{""},
 		},
 		{
@@ -367,173 +362,6 @@ func TestRunContext_WhenSessionExists_ThenWritesHeaderAndContext(t *testing.T) {
 	got := stdout.String()
 	if !strings.Contains(got, "# Session 12345678 | proj | 1m") || !strings.Contains(got, "U: hello") {
 		t.Fatalf("stdout missing context output:\n%s", got)
-	}
-}
-
-func TestRunStats_WhenNoTokens_ThenWritesCharacterBreakdown(t *testing.T) {
-	root, sid := writeCLIFixture(t)
-	var stdout, stderr bytes.Buffer
-	store := parser.Store{
-		ProjectsDir:    filepath.Join(root, ".claude", "projects"),
-		SessionMetaDir: filepath.Join(root, ".claude", "usage-data", "session-meta"),
-	}
-
-	err := runStats([]string{"--no-tokens", sid}, &stdout, &stderr, store, testReader)
-	if err != nil {
-		t.Fatalf("runStats returned error: %v", err)
-	}
-	got := stdout.String()
-	if !strings.Contains(got, "Session: 12345678") || !strings.Contains(got, "=== Breakdown ===") {
-		t.Fatalf("stdout missing stats output:\n%s", got)
-	}
-}
-
-// When token counting fails, runStats must not fall back to local estimates.
-// Token output is only meaningful when backed by the Anthropic token counting
-// API; without it, the command should explain how to configure the API key.
-func TestRunStats_WhenTokenAPIUnavailable_ThenPrintsConfigHintWithoutEstimate(t *testing.T) {
-	root := t.TempDir()
-	sid := "12345678-1234-1234-1234-123456789abc"
-	projectDir := filepath.Join(root, ".claude", "projects", "proj")
-	metaDir := filepath.Join(root, ".claude", "usage-data", "session-meta")
-	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		t.Fatalf("create project dir: %v", err)
-	}
-	if err := os.MkdirAll(metaDir, 0o755); err != nil {
-		t.Fatalf("create meta dir: %v", err)
-	}
-	transcript := strings.Join([]string{
-		`{"type":"user","timestamp":"2026-05-28T00:00:00Z","message":{"role":"user","content":"hello"}}`,
-		`{"type":"assistant","timestamp":"2026-05-28T00:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"},{"type":"tool_use","name":"Bash","id":"toolu_1","input":{"command":"echo this raw input is cut from the filtered stream"}}]}}`,
-		`{"type":"user","timestamp":"2026-05-28T00:00:02Z","toolUseResult":{"success":true,"commandName":"Bash"},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"and this raw result is also cut from the filtered stream"}]}}`,
-		"",
-	}, "\n")
-	if err := os.WriteFile(filepath.Join(projectDir, sid+".jsonl"), []byte(transcript), 0o644); err != nil {
-		t.Fatalf("write transcript: %v", err)
-	}
-	writeListMeta(t, metaDir, sid, "/tmp/proj", "hello")
-	store := parser.Store{ProjectsDir: filepath.Join(root, ".claude", "projects"), SessionMetaDir: metaDir}
-
-	// Empty key + no config.json => CountTokensAPI returns before any network call.
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("HOME", root)
-	config.Reset()
-
-	var stdout, stderr bytes.Buffer
-	if err := runStats([]string{sid}, &stdout, &stderr, store, testReader); err != nil {
-		t.Fatalf("runStats returned error: %v", err)
-	}
-	got := stdout.String()
-
-	if !strings.Contains(got, "hint: to see token counts") {
-		t.Fatalf("stdout missing config hint:\n%s", got)
-	}
-	if strings.Contains(stderr.String(), "hint:") {
-		t.Fatalf("hint must not appear in stderr (renders red in PowerShell):\n%s", stderr.String())
-	}
-	if strings.Contains(got, "=== Tokens (estimated) ===") {
-		t.Fatalf("stdout must not print heuristic token estimates:\n%s", got)
-	}
-	if strings.Contains(got, "=== Tokens (Anthropic API) ===") {
-		t.Fatalf("stdout unexpectedly took the API success branch:\n%s", got)
-	}
-}
-
-// pad10 right-aligns s in a 10-wide field, matching runStats' "%10s" format,
-// so assertions can pin a value to a specific labelled line.
-func pad10(s string) string {
-	if len(s) >= 10 {
-		return s
-	}
-	return strings.Repeat(" ", 10-len(s)) + s
-}
-
-// When both concurrent token-count calls succeed, runStats prints the
-// Anthropic-API block (not the estimate block). The package-level
-// newCountTokensFn seam lets us stub a deterministic success offline. Returning
-// distinct raw/filtered counts proves each result is routed to its own line
-// rather than one value being printed twice.
-func TestRunStats_WhenTokenAPISucceeds_ThenPrintsAPITokenCounts(t *testing.T) {
-	// A tool_use carries raw input/result that is CUT from the filtered stream,
-	// so RawText and FilteredText genuinely differ — letting the stub route a
-	// distinct count to each line and proving they aren't conflated.
-	root := t.TempDir()
-	sid := "12345678-1234-1234-1234-123456789abc"
-	projectDir := filepath.Join(root, ".claude", "projects", "proj")
-	metaDir := filepath.Join(root, ".claude", "usage-data", "session-meta")
-	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		t.Fatalf("create project dir: %v", err)
-	}
-	if err := os.MkdirAll(metaDir, 0o755); err != nil {
-		t.Fatalf("create meta dir: %v", err)
-	}
-	transcript := strings.Join([]string{
-		`{"type":"user","timestamp":"2026-05-28T00:00:00Z","message":{"role":"user","content":"hello"}}`,
-		`{"type":"assistant","timestamp":"2026-05-28T00:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"},{"type":"tool_use","name":"Bash","id":"toolu_1","input":{"command":"echo this raw input is cut from filtered"}}]}}`,
-		`{"type":"user","timestamp":"2026-05-28T00:00:02Z","toolUseResult":{"success":true,"commandName":"Bash"},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"and this raw result is also cut"}]}}`,
-		"",
-	}, "\n")
-	if err := os.WriteFile(filepath.Join(projectDir, sid+".jsonl"), []byte(transcript), 0o644); err != nil {
-		t.Fatalf("write transcript: %v", err)
-	}
-	writeListMeta(t, metaDir, sid, "/tmp/proj", "hello")
-	store := parser.Store{ProjectsDir: filepath.Join(root, ".claude", "projects"), SessionMetaDir: metaDir}
-
-	result := analyzer.ComputeStats(mustReadAll(t, filepath.Join(projectDir, sid+".jsonl")))
-	if result.RawText == result.FilteredText {
-		t.Fatalf("fixture invalid: RawText and FilteredText are identical, cannot distinguish lines")
-	}
-
-	const (
-		rawCount  = 1234
-		filtCount = 567
-	)
-	original := newCountTokensFn
-	t.Cleanup(func() { newCountTokensFn = original })
-	factoryCalls := 0
-	// Route the larger count to the raw stream, the smaller to the filtered
-	// stream. A mutation that fed both lines the same text would print one
-	// value twice and drop the other.
-	newCountTokensFn = func(model string) (countTokensFunc, error) {
-		factoryCalls++
-		return func(text string) (int, error) {
-			if text == result.RawText {
-				return rawCount, nil
-			}
-			return filtCount, nil
-		}, nil
-	}
-
-	var stdout, stderr bytes.Buffer
-	if err := runStats([]string{sid}, &stdout, &stderr, store, testReader); err != nil {
-		t.Fatalf("runStats returned error: %v", err)
-	}
-	got := stdout.String()
-
-	if !strings.Contains(got, "=== Tokens (Anthropic API) ===") {
-		t.Fatalf("stdout missing API-tokens header:\n%s", got)
-	}
-	if strings.Contains(got, "=== Tokens (estimated) ===") {
-		t.Fatalf("stdout unexpectedly took the estimate branch:\n%s", got)
-	}
-	if strings.Contains(got, "~") {
-		t.Fatalf("API branch should not print '~' approximate markers:\n%s", got)
-	}
-	if factoryCalls != 1 {
-		t.Fatalf("newCountTokensFn calls = %d, want 1", factoryCalls)
-	}
-	// Each count must land on its correctly-labelled line. Pinning the value to
-	// the line (not just "appears somewhere") is what catches a SUT mutation
-	// that swaps which stream each goroutine counts.
-	if !strings.Contains(got, "Raw:      "+pad10(analyzer.FormatNumber(rawCount))+"\n") {
-		t.Fatalf("stdout missing raw API count %d on Raw line:\n%s", rawCount, got)
-	}
-	if !strings.Contains(got, "Filtered: "+pad10(analyzer.FormatNumber(filtCount))+"\n") {
-		t.Fatalf("stdout missing filtered API count %d on Filtered line:\n%s", filtCount, got)
-	}
-	// Saved = raw - filtered must also be printed (guards the saved math).
-	if !strings.Contains(got, "Saved:    "+pad10(analyzer.FormatNumber(rawCount-filtCount))) {
-		t.Fatalf("stdout missing saved count %d on Saved line:\n%s", rawCount-filtCount, got)
 	}
 }
 
@@ -1193,17 +1021,6 @@ func TestRunRead_GivenHelpFlag_ThenReturnsErrHelp(t *testing.T) {
 		t.Fatalf("runRead(-h) = %v, want flag.ErrHelp", err)
 	}
 	if !strings.Contains(stderr.String(), "max-lines") {
-		t.Fatalf("stderr should contain flag descriptions, got: %q", stderr.String())
-	}
-}
-
-func TestRunStats_GivenHelpFlag_ThenReturnsErrHelp(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	err := runStats([]string{"-h"}, &stdout, &stderr, parser.Store{}, testReader)
-	if err == nil || err.Error() != "flag: help requested" {
-		t.Fatalf("runStats(-h) = %v, want flag.ErrHelp", err)
-	}
-	if !strings.Contains(stderr.String(), "no-tokens") {
 		t.Fatalf("stderr should contain flag descriptions, got: %q", stderr.String())
 	}
 }
